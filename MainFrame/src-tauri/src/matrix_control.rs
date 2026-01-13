@@ -1,7 +1,5 @@
 use serialport::SerialPort;
 use std::time::Duration;
-use tauri::State;
-use std::sync::Mutex;
 
 // Framework LED Matrix Constants
 const BAUD_RATE: u32 = 115200;
