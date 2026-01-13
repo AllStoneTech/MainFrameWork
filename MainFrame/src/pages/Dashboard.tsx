@@ -53,18 +53,41 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="bg-[#2a2a2a] p-6 rounded-xl border border-white/5 shadow-xl flex flex-col justify-between">
+          <div>
+            <h3 className="text-gray-400 text-sm font-medium uppercase tracking-wider mb-4">Command Center</h3>
+            <div className="flex items-end gap-2 mb-1">
+              <span className="text-4xl font-bold text-white">Online</span>
+              <span className="relative flex h-3 w-3 mb-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+              </span>
+            </div>
+            <div className="text-xs text-gray-500 font-mono">SECURE RELAY ACTIVE</div>
+          </div>
+          <div className="mt-6 pt-4 border-t border-white/5 flex justify-between text-xs text-gray-400">
+            <span>UPTIME</span>
+            <span className="font-mono text-white">00:42:18</span>
+          </div>
+        </div>
+
         <div className="bg-[#2a2a2a] p-6 rounded-xl border border-white/5 shadow-xl">
           <h3 className="text-gray-400 text-sm font-medium uppercase tracking-wider mb-4">Connected Modules</h3>
           {devices.length === 0 ? (
-            <div className="text-gray-500 text-sm">No Framework Detected</div>
+            <div className="flex flex-col items-center justify-center h-32 text-gray-500 text-sm border-2 border-dashed border-white/5 rounded-lg">
+              <Laptop size={24} className="mb-2 opacity-50" />
+              <span>No Framework Detected</span>
+            </div>
           ) : (
             <div className="space-y-3">
               {devices.map((dev, i) => (
-                <div key={i} className="flex items-center gap-3 p-3 bg-black/20 rounded-lg border border-white/5">
-                  {getIcon(dev.device_type)}
+                <div key={i} className="flex items-center gap-3 p-3 bg-black/40 rounded-lg border border-primary/20 hover:border-primary/50 transition-colors group">
+                  <div className="p-2 bg-primary/10 rounded-md text-primary group-hover:bg-primary group-hover:text-black transition-colors">
+                    {getIcon(dev.device_type)}
+                  </div>
                   <div>
-                    <div className="text-sm font-medium text-white">{dev.description}</div>
-                    <div className="text-xs text-gray-500">PID: 0x{dev.pid.toString(16).toUpperCase()}</div>
+                    <div className="text-sm font-bold text-white group-hover:text-primary transition-colors">{dev.description}</div>
+                    <div className="text-[10px] text-gray-500 font-mono">PID: 0x{dev.pid.toString(16).toUpperCase()}</div>
                   </div>
                 </div>
               ))}

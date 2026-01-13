@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Eraser, Pen, Upload } from "lucide-react";
 
@@ -93,11 +93,12 @@ export default function MatrixStudio() {
          </div>
       )}
 
-      <div className="flex flex-1 justify-center overflow-auto">
-        <div className="bg-black rounded-xl border border-gray-800 p-8 shadow-2xl inline-block">
+      <div className="flex flex-1 justify-center items-center overflow-auto bg-[#111] rounded-xl border border-white/5 mx-auto w-full max-w-2xl py-8">
+        <div className="bg-black/80 backdrop-blur rounded-xl border border-gray-800 p-8 shadow-2xl inline-block relative">
+            <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 to-purple-500/20 rounded-xl blur opacity-20"></div>
             {/* The Matrix is tall (9 wide x 34 tall). We render it rotated 90deg visually? Na, let's render it vertical like the numpad. */}
             <div 
-              className="grid gap-1.5 select-none touch-none"
+              className="grid gap-1.5 select-none touch-none relative z-10"
               style={{ 
                 gridTemplateColumns: `repeat(${WIDTH}, 24px)` 
               }}

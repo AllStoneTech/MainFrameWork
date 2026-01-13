@@ -5,7 +5,7 @@
 **Goal:** A "Hello World" Tauri app that can detect the Matrix and draw on it.
 **Delivery:** Single Executable (`MainFrame.exe`, ~8MB).
 
-- [ ] **[Setup] Scaffold Tauri Project**
+- [x] **[Setup] Scaffold Tauri Project**
   - Initialize Tauri v2 (Rust) + React (TypeScript) + Vite.
   - Configure `tauri.conf.json` for "Single Instance" and "Hardware
     Permissions".
@@ -13,7 +13,7 @@
   - Implement `PersistenceState` struct in Rust.
   - Add `aes-gcm` crate. Implement `save_encrypted()` and `load_encrypted()`
     functions.
-- [ ] **[Feature] Matrix Canvas**
+- [x] **[Feature] Matrix Canvas**
   - **Rust:** Implement `serialport` communication with RP2040.
   - **React:** Build 34x9 Grid UI.
   - **Bridge:** Create Tauri Command `draw_matrix(bytes)` to flush buffer.
@@ -22,7 +22,7 @@
 
 **Goal:** Dynamic "God Mode" Dashboard (Fans, Battery, Hot-swap).
 
-- [ ] **[Core] Device Manager**
+- [x] **[Core] Device Manager**
   - **Rust:** Build `DeviceScanner` struct using `rusb` crate.
   - **Poll Loop:** Check for VID `0x32AC` (Framework) every 2s or on USB Event.
   - **React:** Update Dashboard tabs based on `Scanner` state.
@@ -37,9 +37,10 @@
 
 **Goal:** Full Keyboard/Macropad configuration via Raw HID.
 
-- [ ] **[Core] VIA/HID Service**
+- [x] **[Core] VIA/HID Service**
   - **Rust:** Implement `hidapi` to send/receive Raw HID packets.
   - **Logic:** Port QMK/VIA protocol definitions to Rust structs.
+  - **Status:** RGB Lighting Control Implemented (MVP).
 - [ ] **[UI] Keymap Editor**
   - Build Layer visualizer.
   - Build Macro recorder.

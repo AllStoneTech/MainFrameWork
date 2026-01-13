@@ -1,6 +1,5 @@
-use rusb::{Device, DeviceDescriptor, GlobalContext};
+use rusb::Device;
 use serde::Serialize;
-use std::time::Duration;
 
 const FRAMEWORK_VID: u16 = 0x32AC;
 

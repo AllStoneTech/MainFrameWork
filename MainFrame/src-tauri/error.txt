@@ -1,0 +1,87 @@
+    Checking windows_x86_64_msvc v0.48.5
+    Checking windows-targets v0.48.5
+    Checking windows-sys v0.48.0
+    Checking windows-core v0.52.0
+   Compiling mainframe v0.1.0 (C:\Users\cmerc\OneDrive\Documents\AllStoneTech\Projects\Framework\MainFrame\src-tauri)
+    Checking windows v0.52.0
+    Checking hidapi v2.6.4
+error[E0432]: unresolved import `windows::Win32::Storage::FileSystem::CreateFileW`
+   --> src\ec_check.rs:15:47
+    |
+ 15 |     use windows::Win32::Storage::FileSystem::{CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL};
+    |                                               ^^^^^^^^^^^ no `CreateFileW` in `Win32::Storage::FileSystem`
+    |
+note: found an item that was configured out
+   --> C:\Users\cmerc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows-0.52.0\src\Windows\Win32\Storage\FileSystem\mod.rs:511:15
+    |
+509 | #[cfg(all(feature = "Win32_Foundation", feature = "Win32_Security"))]
+    |                                         -------------------------- the item is gated behind the `Win32_Security` feature
+510 | #[inline]
+511 | pub unsafe fn CreateFileW<P0, P1>(lpfilename: P0, dwdesiredaccess: u32, dwsharemode: FILE_SHARE_MODE, lpsecurityattributes: ::core::optio...
+    |               ^^^^^^^^^^^
+
+warning: unused imports: `DeviceDescriptor`, `Device`, and `GlobalContext`
+ --> src\device_manager.rs:1:12
+  |
+1 | use rusb::{Device, DeviceDescriptor, GlobalContext};
+  |            ^^^^^^  ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::time::Duration`
+ --> src\device_manager.rs:3:5
+  |
+3 | use std::time::Duration;
+  |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `tauri::State`
+ --> src\matrix_control.rs:3:5
+  |
+3 | use tauri::State;
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Mutex`
+ --> src\matrix_control.rs:4:5
+  |
+4 | use std::sync::Mutex;
+  |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::path::Path`
+ --> src\ec_check.rs:2:5
+  |
+2 | use std::path::Path;
+  |     ^^^^^^^^^^^^^^^
+
+warning: unused imports: `Engine as _` and `engine::general_purpose`
+ --> src\persistence.rs:5:14
+  |
+5 | use base64::{engine::general_purpose, Engine as _};
+  |              ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^
+
+error[E0599]: no function or associated item named `generate_nonce` found for struct `AesGcm<Aes, NonceSize, TagSize>` in the current scope
+  --> src\persistence.rs:41:28
+   |
+41 |     let nonce = Aes256Gcm::generate_nonce(&mut OsRng); // 96-bits; unique per message
+   |                            ^^^^^^^^^^^^^^ function or associated item not found in `AesGcm<Aes256, UInt<UInt<UInt<UInt<UTerm, B1>, B1>, B0>, B0>>`
+   |
+   = help: items from traits can only be used if the trait is in scope
+help: trait `AeadCore` which provides `generate_nonce` is implemented but not in scope; perhaps you want to import it
+   |
+ 1 + use aes_gcm::AeadCore;
+   |
+help: there is an associated function `generate_key` with a similar name
+   |
+41 -     let nonce = Aes256Gcm::generate_nonce(&mut OsRng); // 96-bits; unique per message
+41 +     let nonce = Aes256Gcm::generate_key(&mut OsRng); // 96-bits; unique per message
+   |
+
+warning: unused import: `serialport::SerialPort`
+ --> src\matrix_control.rs:1:5
+  |
+1 | use serialport::SerialPort;
+  |     ^^^^^^^^^^^^^^^^^^^^^^
+
+Some errors have detailed explanations: E0432, E0599.
+For more information about an error, try `rustc --explain E0432`.
+warning: `mainframe` (lib) generated 7 warnings
+error: could not compile `mainframe` (lib) due to 2 previous errors; 7 warnings emitted
