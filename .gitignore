@@ -1,0 +1,18 @@
+# Node
+node_modules/
+dist/
+npm-debug.log
+
+# Rust / Tauri
+src-tauri/target/
+target/
+
+# OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# App Data
+user_data.bin
+*.log
