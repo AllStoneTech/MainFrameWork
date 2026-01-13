@@ -5,6 +5,7 @@ fn greet(name: &str) -> String {
 }
 
 mod device_manager;
+mod matrix_control;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -12,7 +13,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             greet,
-            device_manager::scan_devices
+            device_manager::scan_devices,
+            matrix_control::update_matrix
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
