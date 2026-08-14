@@ -10,8 +10,8 @@ It is portable (can be copied) but secure (cannot be read without the app).
 #### 1. User Data (Read/Write)
 
 - **Path:**
-  - _Windows:_ `%APPDATA%\MainFrame\user_data.bin`
-  - _Linux:_ `~/.config/MainFrame/user_data.bin`
+  - _Windows:_ `%APPDATA%\MainFrameWork\user_data.bin`
+  - _Linux:_ `~/.config/MainFrameWork/user_data.bin`
 - **Format:** AES-256-GCM Encrypted JSON.
 - **Owner:** The Rust Backend is the _only_ process that can read/write this
   file. The Frontend receives decrypted objects in memory.

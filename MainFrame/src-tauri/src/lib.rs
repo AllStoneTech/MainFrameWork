@@ -15,11 +15,18 @@ mod installer;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .manage(keyboard_mapper::KeyboardHidState::default())
         .invoke_handler(tauri::generate_handler![
             greet,
             device_manager::scan_devices,
             matrix_control::update_matrix,
+            matrix_control::set_matrix_brightness,
+            matrix_control::set_matrix_sleep,
             keyboard_mapper::set_keyboard_color,
+            keyboard_mapper::set_keyboard_effect,
+            keyboard_mapper::set_keyboard_effect_speed,
+            keyboard_mapper::set_keyboard_brightness,
+            keyboard_mapper::save_keyboard_lighting,
             ec_check::check_ec_status,
             persistence::save_settings,
             persistence::load_settings,
