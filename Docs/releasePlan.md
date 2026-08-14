@@ -1,9 +1,9 @@
-# Release Plan: MainFrame
+# Release Plan: MainFrameWork
 
 ## Release 1: The Rust Foundation (MVP)
 
 **Goal:** A "Hello World" Tauri app that can detect the Matrix and draw on it.
-**Delivery:** Single Executable (`MainFrame.exe`, ~8MB).
+**Delivery:** Single Executable (`MainFrameWork.exe`, ~8MB).
 
 - [x] **[Setup] Scaffold Tauri Project**
   - Initialize Tauri v2 (Rust) + React (TypeScript) + Vite.

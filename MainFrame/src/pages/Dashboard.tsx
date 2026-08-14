@@ -52,6 +52,48 @@ export default function Dashboard() {
         </button>
       </div>
 
+      {/* Hero: labeled bay layout, per UI_UX.md "Hero Section" (real 3D/SVG render is a later pass).
+          Each bay carries its own icon + label so it's legible even when nothing is connected —
+          color alone (the old version) told you nothing without already knowing the layout. */}
+      <div className="bg-[#161616] rounded-xl border border-white/5 shadow-xl mb-6 p-8 flex items-center justify-center overflow-hidden relative">
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent pointer-events-none" />
+        <div className="flex gap-4 p-4 rounded-lg border border-[#3a3a3a] relative z-10">
+          {[
+            {
+              label: "Matrix",
+              icon: Grid3X3,
+              connected: devices.some((d) => d.device_type === "Matrix"),
+            },
+            {
+              label: "Keyboard",
+              icon: Keyboard,
+              connected: devices.some((d) => d.device_type === "Keyboard"),
+            },
+            {
+              label: devices.some((d) => d.device_type === "Macropad") ? "Macropad" : "Numpad",
+              icon: devices.some((d) => d.device_type === "Macropad") ? Grid3X3 : Calculator,
+              connected: devices.some((d) => d.device_type === "Numpad" || d.device_type === "Macropad"),
+            },
+          ].map((bay) => (
+            <div
+              key={bay.label}
+              className={`flex flex-col items-center justify-center gap-2 w-28 h-32 rounded-lg border-2 transition-colors ${
+                bay.connected ? "border-primary bg-primary/5" : "border-[#333]"
+              }`}
+            >
+              <bay.icon size={26} className={bay.connected ? "text-primary" : "text-gray-600"} />
+              <span
+                className={`text-xs font-medium uppercase tracking-wide ${
+                  bay.connected ? "text-primary" : "text-gray-500"
+                }`}
+              >
+                {bay.label}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <div className="bg-[#2a2a2a] p-6 rounded-xl border border-white/5 shadow-xl flex flex-col justify-between">
           <div>
@@ -63,7 +105,7 @@ export default function Dashboard() {
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
               </span>
             </div>
-            <div className="text-xs text-gray-500 font-mono">SECURE RELAY ACTIVE</div>
+            <div className="text-xs text-gray-400 font-mono">SECURE RELAY ACTIVE</div>
           </div>
           <div className="mt-6 pt-4 border-t border-white/5 flex justify-between text-xs text-gray-400">
             <span>UPTIME</span>
@@ -74,7 +116,7 @@ export default function Dashboard() {
         <div className="bg-[#2a2a2a] p-6 rounded-xl border border-white/5 shadow-xl">
           <h3 className="text-gray-400 text-sm font-medium uppercase tracking-wider mb-4">Connected Modules</h3>
           {devices.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-32 text-gray-500 text-sm border-2 border-dashed border-white/5 rounded-lg">
+            <div className="flex flex-col items-center justify-center h-32 text-gray-400 text-sm border-2 border-dashed border-white/5 rounded-lg">
               <Laptop size={24} className="mb-2 opacity-50" />
               <span>No Framework Detected</span>
             </div>
@@ -87,7 +129,7 @@ export default function Dashboard() {
                   </div>
                   <div>
                     <div className="text-sm font-bold text-white group-hover:text-primary transition-colors">{dev.description}</div>
-                    <div className="text-[10px] text-gray-500 font-mono">PID: 0x{dev.pid.toString(16).toUpperCase()}</div>
+                    <div className="text-[10px] text-gray-400 font-mono">PID: 0x{dev.pid.toString(16).toUpperCase()}</div>
                   </div>
                 </div>
               ))}

@@ -1,0 +1,183 @@
+import type { ReactElement } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useOutletContext } from "react-router-dom";
+import { invoke } from "@tauri-apps/api/core";
+import { Play, Pause, Plus, Trash2, Upload } from "lucide-react";
+import { Card } from "../../components/ui/Card";
+import { PixelGrid } from "../../components/ui/PixelGrid";
+import { loadSettings, patchSettings } from "../../lib/settings";
+import type { MatrixStudioContext } from "./MatrixStudio";
+
+const WIDTH = 9;
+const HEIGHT = 34;
+const FRAME_INTERVAL_MS = 200;
+const SETTINGS_KEY = "matrix_animator_frames";
+const BLANK_FRAME = (): number[] => new Array(WIDTH * HEIGHT).fill(0);
+
+/**
+ * Frame-by-frame animation editor for the LED Matrix. Frames persist to
+ * the same encrypted settings blob LightingTab uses. Both "Upload to
+ * Matrix" and Play push frames to the real device via the same
+ * `update_matrix` command CanvasTab uses — Play just calls it on every
+ * frame tick instead of once. This streams frames live from the host
+ * rather than storing the sequence on-device via the module's ANIMATE_CMD
+ * (see dotmatrixtool/app.js) — that would let the panel animate without
+ * MainFrameWork running, but needs its own protocol verification pass
+ * against real hardware before relying on it.
+ */
+export default function AnimatorTab(): ReactElement {
+  const { panel } = useOutletContext<MatrixStudioContext>();
+  const [frames, setFrames] = useState<number[][]>([BLANK_FRAME()]);
+  const [activeFrame, setActiveFrame] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [status, setStatus] = useState("");
+  const intervalRef = useRef<number | null>(null);
+  const loaded = useRef(false);
+
+  useEffect(() => {
+    loadSettings().then((settings) => {
+      const saved = settings[SETTINGS_KEY] as number[][] | undefined;
+      if (saved && saved.length > 0) {
+        setFrames(saved);
+      }
+      loaded.current = true;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!loaded.current) return;
+    patchSettings({ [SETTINGS_KEY]: frames }).catch((err) => console.error("Failed to save animator frames:", err));
+  }, [frames]);
+
+  // While playing, each tick both advances the preview and pushes the new
+  // frame to the real device — so Play doubles as live on-device playback,
+  // not just a local animation preview.
+  useEffect(() => {
+    if (playing && frames.length > 1) {
+      intervalRef.current = window.setInterval(() => {
+        setActiveFrame((prev) => {
+          const next = (prev + 1) % frames.length;
+          invoke("update_matrix", { imgData: frames[next], panel }).catch((err) => {
+            console.error("Playback upload failed:", err);
+          });
+          return next;
+        });
+      }, FRAME_INTERVAL_MS);
+    }
+    return () => {
+      if (intervalRef.current) window.clearInterval(intervalRef.current);
+    };
+  }, [playing, frames, panel]);
+
+  const togglePixel = (index: number): void => {
+    setFrames((prev) => {
+      const next = [...prev];
+      const frame = [...next[activeFrame]];
+      frame[index] = frame[index] > 0 ? 0 : 255;
+      next[activeFrame] = frame;
+      return next;
+    });
+  };
+
+  const addFrame = (): void => {
+    setFrames((prev) => [...prev, BLANK_FRAME()]);
+    setActiveFrame(frames.length);
+  };
+
+  const deleteFrame = (index: number): void => {
+    if (frames.length === 1) return;
+    setFrames((prev) => prev.filter((_, i) => i !== index));
+    setActiveFrame((prev) => Math.max(0, prev >= index ? prev - 1 : prev));
+  };
+
+  const uploadCurrentFrame = async (): Promise<void> => {
+    setStatus("Uploading...");
+    try {
+      await invoke("update_matrix", { imgData: frames[activeFrame], panel });
+      setStatus("Success");
+      setTimeout(() => setStatus(""), 2000);
+    } catch (error) {
+      console.error(error);
+      setStatus(`Error: ${error}`);
+    }
+  };
+
+  return (
+    <div className="h-full flex flex-col gap-4">
+      <Card className="flex-1 flex flex-col items-center justify-center p-6 min-h-0">
+        <div className="bg-black/80 backdrop-blur rounded-xl border border-gray-800 p-6 shadow-2xl">
+          <PixelGrid
+            width={WIDTH}
+            height={HEIGHT}
+            pixels={frames[activeFrame]}
+            cellSize={18}
+            onPixelDown={togglePixel}
+          />
+        </div>
+      </Card>
+
+      {status && status !== "Uploading..." && status !== "Success" && (
+        <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-500 rounded-lg text-sm">{status}</div>
+      )}
+
+      <Card className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-bold text-white">
+            Frame {activeFrame + 1} / {frames.length}
+          </h3>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPlaying((p) => !p)}
+              title={playing ? "Pause (stops live playback on the device)" : "Play (streams frames to the device live)"}
+              className="p-2 rounded-lg bg-black/20 border border-white/10 text-gray-400 hover:text-white"
+            >
+              {playing ? <Pause size={16} /> : <Play size={16} />}
+            </button>
+            <button
+              onClick={addFrame}
+              className="flex items-center gap-1 px-3 py-2 rounded-lg bg-primary/10 border border-primary/30 text-primary text-sm font-medium hover:bg-primary/20"
+            >
+              <Plus size={16} /> Add Frame
+            </button>
+            <button
+              onClick={uploadCurrentFrame}
+              disabled={status === "Uploading..." || playing}
+              title={playing ? "Stop playback to upload a single frame" : "Upload the current frame to the matrix"}
+              className="flex items-center gap-2 px-3 py-2 bg-white text-black font-bold rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Upload size={16} /> {status === "Uploading..." ? "Sending..." : "Upload to Matrix"}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {frames.map((frame, i) => (
+            <div
+              key={i}
+              onClick={() => {
+                setPlaying(false);
+                setActiveFrame(i);
+              }}
+              className={`relative shrink-0 p-1.5 rounded-lg border cursor-pointer group ${
+                activeFrame === i ? "border-primary bg-primary/10" : "border-white/10 bg-black/20 hover:border-white/30"
+              }`}
+            >
+              <PixelGrid width={WIDTH} height={HEIGHT} pixels={frame} cellSize={2} gap={1} interactive={false} />
+              {frames.length > 1 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteFrame(i);
+                  }}
+                  className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <Trash2 size={10} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}

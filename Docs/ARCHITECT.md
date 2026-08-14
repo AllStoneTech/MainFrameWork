@@ -1,4 +1,4 @@
-# ARCHITECT: Technical Blueprint (MainFrame)
+# ARCHITECT: Technical Blueprint (MainFrameWork)
 
 ### Technology Stack
 

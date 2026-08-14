@@ -1,6 +1,18 @@
-# Tauri + React + Typescript
+# MainFrameWork
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+A unified desktop control panel for the Framework Laptop 16 — keyboard
+remapping and RGB lighting, LED Matrix drawing/widgets/animation, and
+system health (fans, battery, expansion cards), in one Tauri app.
+
+See [Docs/CONCEPT.md](../Docs/CONCEPT.md) for the product vision and
+[Docs/ARCHITECT.md](../Docs/ARCHITECT.md) for the technical architecture.
+
+## Development
+
+```bash
+npm install
+npm run tauri dev
+```
 
 ## Recommended IDE Setup
 

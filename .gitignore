@@ -13,6 +13,9 @@ Thumbs.db
 .idea/
 .vscode/
 
+# Claude Code (local-only session state)
+.claude/
+
 # App Data
 user_data.bin
 *.log

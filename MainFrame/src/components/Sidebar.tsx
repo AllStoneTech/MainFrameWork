@@ -1,5 +1,8 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Keyboard, Grid3X3, Cpu } from "lucide-react";
+import { LayoutDashboard, Keyboard, Grid3X3, Cpu, Layers, Settings } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { StatusPill } from "./ui/StatusPill";
+import astLogo from "../assets/AST_Icon_Trans_800.png";
 
 export function Sidebar() {
   const navItems = [
@@ -7,15 +10,17 @@ export function Sidebar() {
     { icon: Keyboard, label: "Input Studio", path: "/input" },
     { icon: Grid3X3, label: "Matrix Studio", path: "/matrix" },
     { icon: Cpu, label: "System Health", path: "/system" },
+    { icon: Layers, label: "Profiles", path: "/profiles" },
+    { icon: Settings, label: "Settings", path: "/settings" },
   ];
 
   return (
     <div className="w-64 bg-[#1a1a1a] border-r border-[#333] flex flex-col h-screen">
       <div className="p-6">
         <h1 className="text-xl font-bold tracking-tight text-white">
-          Main<span className="text-primary">Frame</span>
+          Main<span className="text-primary">Frame</span>Work
         </h1>
-        <p className="text-xs text-gray-500 mt-1">v0.1.0 • Portable</p>
+        <p className="text-xs text-gray-400 mt-1">v0.1.0 • Portable</p>
       </div>
 
       <nav className="flex-1 px-4 space-y-1">
@@ -23,6 +28,7 @@ export function Sidebar() {
           <NavLink
             key={item.path}
             to={item.path}
+            end={item.path === "/"}
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                 isActive
@@ -37,11 +43,18 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="p-4 border-t border-[#333]">
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-black/20 border border-white/5">
-          <div className="w-2 h-2 rounded-full bg-green-500 box-shadow-green" />
-          <span className="text-xs font-medium text-gray-400">Device Connected</span>
-        </div>
+      <div className="p-4 border-t border-[#333] space-y-3">
+        <StatusPill label="Device Connected" variant="connected" />
+        <button
+          type="button"
+          onClick={() =>
+            openUrl("https://www.AllStoneTech.com").catch((err: unknown) => console.error("Failed to open link:", err))
+          }
+          title="Designed and Implemented by All Stone Tech"
+          className="flex items-center justify-center w-full opacity-50 hover:opacity-100 grayscale hover:grayscale-0 transition-all duration-500"
+        >
+          <img src={astLogo} alt="All Stone Tech Logo" className="h-6 w-auto" />
+        </button>
       </div>
     </div>
   );

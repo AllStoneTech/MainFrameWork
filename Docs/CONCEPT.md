@@ -1,9 +1,9 @@
-# CONCEPT: MainFrame
+# CONCEPT: MainFrameWork
 
 ### The Vision
 
 **"One App to Rule Them All."** The Framework Laptop 16 is a masterpiece of
-modular hardware, but its software ecosystem is fragmented. **MainFrame**
+modular hardware, but its software ecosystem is fragmented. **MainFrameWork**
 unifies these tools into a single, ultra-lightweight, secure desktop
 application. It transforms the Framework 16 from a "DIY Tinkerer's Laptop" into
 a "Polished Flagship Machine."
@@ -30,7 +30,7 @@ a "Polished Flagship Machine."
   1. **Donations:** Community support.
   2. **Pro Features:** Paid "Unlock" for Cloud Sync, Unlimited Profiles, and
      GameSense.
-  3. **Enterprise:** Paid Licensing for OEMs (Framework) to bundle MainFrame
+  3. **Enterprise:** Paid Licensing for OEMs (Framework) to bundle MainFrameWork
      with drivers.
 
 ---
