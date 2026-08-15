@@ -4,7 +4,7 @@
 
 **"One App to Rule Them All."** The Framework Laptop 16 is a masterpiece of
 modular hardware, but its software ecosystem is fragmented. **MainFrameWork**
-unifies these tools into a single, ultra-lightweight, secure desktop
+unifies these tools into a single, ultra-lightweight, local-only desktop
 application. It transforms the Framework 16 from a "DIY Tinkerer's Laptop" into
 a "Polished Flagship Machine."
 
@@ -75,4 +75,5 @@ a "Polished Flagship Machine."
 ### Target User
 
 The **"Framework Pro"**: Developers, Power Users, and Cyber-deck builders who
-want total control over their hardware in a secured, professional package.
+want total control over their hardware in a lightweight, professional
+package that runs entirely on their own machine.
