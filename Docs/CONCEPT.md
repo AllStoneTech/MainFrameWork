@@ -64,12 +64,6 @@ a "Polished Flagship Machine."
 - **Battery Guardian:** "Stop charging at 80%" toggle. Discharge calibration.
 - **Expansion Inspector:** Visual dashboard of connected modules.
 
-#### 3. Pro Automator
-
-- **Profile Switching:** Auto-switch profiles based on the active app.
-- **Dynamic Detection:** The app automatically detects which modules (Numpad vs
-  Macropad) are currently plugged in.
-
 ---
 
 ### Target User

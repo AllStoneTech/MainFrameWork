@@ -23,9 +23,12 @@ mod keyboard_mapper;
 mod ec_check;
 mod persistence;
 mod installer;
+mod tray;
+mod system_info;
 
 /// Builds and runs the Tauri application: registers plugins, managed
-/// state, and every invokable command, then blocks on the event loop.
+/// state, the tray icon, and every invokable command, then blocks on the
+/// event loop.
 ///
 /// # Panics
 /// Panics if the Tauri runtime fails to start (e.g. webview
@@ -36,9 +39,15 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(keyboard_mapper::KeyboardHidState::default())
+        .manage(system_info::SystemInfoState::default())
+        .setup(|app| {
+            tray::setup_tray(app)?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             greet,
             device_manager::scan_devices,
+            system_info::get_hardware_summary,
             matrix_control::update_matrix,
             matrix_control::set_matrix_brightness,
             matrix_control::set_matrix_sleep,

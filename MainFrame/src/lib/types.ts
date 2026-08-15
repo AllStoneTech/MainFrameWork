@@ -12,3 +12,20 @@ export interface ConnectedDevice {
   description: string;
   device_type: string;
 }
+
+/**
+ * General host hardware/OS info, not Framework-module-specific. Mirrors
+ * `HardwareSummary` in `src-tauri/src/system_info.rs`.
+ */
+export interface HardwareSummary {
+  cpu_name: string;
+  cpu_cores: number;
+  cpu_usage_percent: number;
+  total_memory_gb: number;
+  used_memory_gb: number;
+  gpu_name: string;
+  os_name: string;
+  os_version: string;
+  kernel_version: string;
+  hostname: string;
+}

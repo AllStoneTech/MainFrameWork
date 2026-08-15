@@ -112,13 +112,17 @@ export default function AnimatorTab(): ReactElement {
 
   return (
     <div className="h-full flex flex-col gap-4">
-      <Card className="flex-1 flex flex-col items-center justify-center p-6 min-h-0">
-        <div className="bg-black/80 backdrop-blur rounded-xl border border-gray-800 p-6 shadow-2xl">
+      {/* overflow-auto (previously missing entirely, so an oversized grid
+          just clipped with no way to scroll) + no items-center, same
+          top-clipping trap as CanvasTab — see its comment for why. */}
+      <Card className="flex-1 overflow-auto p-6 min-h-0">
+        <div className="bg-black/80 backdrop-blur rounded-xl border border-gray-800 p-6 shadow-2xl mx-auto w-fit">
           <PixelGrid
             width={WIDTH}
             height={HEIGHT}
             pixels={frames[activeFrame]}
-            cellSize={18}
+            cellSize={16}
+            gap={4}
             onPixelDown={togglePixel}
           />
         </div>

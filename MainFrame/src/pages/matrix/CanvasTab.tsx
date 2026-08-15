@@ -169,14 +169,21 @@ export default function CanvasTab(): ReactElement {
         </div>
       )}
 
-      <div className="flex flex-1 justify-center items-center overflow-auto bg-[#111] rounded-xl border border-white/5 w-full py-8">
-        <div className="bg-black/80 backdrop-blur rounded-xl border border-gray-800 p-8 shadow-2xl inline-block relative">
+      {/* overflow-auto + a plain block flow here (no items-center) —
+          centering an overflowing flex child clips its start edge and only
+          lets you scroll toward the end, which is why the top of the grid
+          used to be unreachable. Horizontal centering is safe via mx-auto
+          on the inner box since width rarely exceeds the container. */}
+      <div className="flex-1 overflow-auto bg-[#111] rounded-xl border border-white/5 w-full py-8">
+        <div className="bg-black/80 backdrop-blur rounded-xl border border-gray-800 p-8 shadow-2xl inline-block relative mx-auto w-fit">
           <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 to-purple-500/20 rounded-xl blur opacity-20" />
           <div className="relative z-10">
             <PixelGrid
               width={WIDTH}
               height={HEIGHT}
               pixels={pixels}
+              cellSize={16}
+              gap={4}
               onPixelDown={(i) => {
                 setIsDrawing(true);
                 handlePixelAction(i);
