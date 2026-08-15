@@ -23,18 +23,6 @@ a "Polished Flagship Machine."
 
 ---
 
-### Business Strategy (The "Open Core")
-
-- **License:** **GPLv3** (Community) + **Proprietary** (Commercial).
-- **Revenue Model:**
-  1. **Donations:** Community support.
-  2. **Pro Features:** Paid "Unlock" for Cloud Sync, Unlimited Profiles, and
-     GameSense.
-  3. **Enterprise:** Paid Licensing for OEMs (Framework) to bundle MainFrameWork
-     with drivers.
-
----
-
 ### Strategic Challenges & Viability
 
 **1. The "Driver Wall" (Windows EC Access)**
