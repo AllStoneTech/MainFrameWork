@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  frontend:
+    name: Frontend build & typecheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: MainFrame
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: MainFrame/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
+
+  backend:
+    name: Rust build check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: MainFrame/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+
+      # Tauri v2's documented Linux prerequisites, plus libusb/libudev for
+      # this app's own rusb/hidapi/serialport dependencies.
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libusb-1.0-0-dev \
+            libudev-dev \
+            pkg-config
+
+      # rust-toolchain.toml in this directory pins the channel; rustup
+      # (preinstalled on GitHub-hosted runners) picks it up automatically.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: MainFrame/src-tauri
+
+      - run: cargo check

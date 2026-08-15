@@ -72,6 +72,13 @@ technical architecture.
 Built specifically for the **Framework Laptop 16** (USB VID `0x32AC`). Other
 Framework models or third-party hardware are not supported.
 
+> **Testing status:** MainFrameWork has so far only been tested on **Windows,
+> against a real Framework Laptop 16**. Linux support (including the udev
+> rules below) is implemented per the OS-specific paths in
+> [Docs/ARCHITECT.md](Docs/ARCHITECT.md), but hasn't been verified against
+> real Linux hardware yet. If you try it on Linux, bug reports (or
+> confirmations that it works!) are welcome.
+
 ## Getting started
 
 ```bash
@@ -82,6 +89,25 @@ npm run tauri dev
 
 See [MainFrame/README.md](MainFrame/README.md) for IDE setup and more detail
 on the dev workflow.
+
+### Linux: device permissions
+
+Talking to the keyboard/matrix over raw USB HID and serial requires
+permission to access those devices, which most distros don't grant to a
+regular user by default. Install the provided udev rule before running the
+app:
+
+```bash
+sudo cp MainFrame/udev/60-mainframework.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+
+Then unplug and replug the affected device (or reboot). See
+[MainFrame/udev/60-mainframework.rules](MainFrame/udev/60-mainframework.rules)
+for what it does — and note its own disclaimer: it's a best-effort rule that
+hasn't been verified against real Linux hardware yet, matching the testing
+status above.
 
 ## Documentation
 
