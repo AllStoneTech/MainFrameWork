@@ -1,10 +1,50 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * Fixed-width left nav rendered by Layout on every page. The nav item
+ * list is the single source of truth for the app's top-level routes —
+ * keep it in sync with the route tree in App.tsx. The "Device Connected"
+ * status pill below reflects a real `scan_devices` result, polled on an
+ * interval since the Sidebar mounts once for the app's lifetime (Layout
+ * wraps the route Outlet, it isn't remounted on navigation) and there's
+ * no push-based hardware_update event from the Rust side yet to react to
+ * hot-swaps instead.
+ */
+import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { LayoutDashboard, Keyboard, Grid3X3, Cpu, Layers, Settings } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { invoke } from "@tauri-apps/api/core";
 import { StatusPill } from "./ui/StatusPill";
 import astLogo from "../assets/AST_Icon_Trans_800.png";
+import type { ConnectedDevice } from "../lib/types";
 
+/** How often to re-poll `scan_devices` for the sidebar's connection pill, in ms. */
+const DEVICE_POLL_INTERVAL_MS = 5000;
+
+/** App-wide navigation sidebar with a live device-connection pill and the AllStoneTech footer link. */
 export function Sidebar() {
+  const [hasConnectedDevice, setHasConnectedDevice] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const poll = async (): Promise<void> => {
+      try {
+        const result = await invoke<ConnectedDevice[]>("scan_devices");
+        if (!cancelled) setHasConnectedDevice(result.length > 0);
+      } catch (error) {
+        console.error("Sidebar device poll failed:", error);
+      }
+    };
+
+    poll();
+    const interval = setInterval(poll, DEVICE_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
   const navItems = [
     { icon: LayoutDashboard, label: "Dashboard", path: "/" },
     { icon: Keyboard, label: "Input Studio", path: "/input" },
@@ -44,7 +84,10 @@ export function Sidebar() {
       </nav>
 
       <div className="p-4 border-t border-[#333] space-y-3">
-        <StatusPill label="Device Connected" variant="connected" />
+        <StatusPill
+          label={hasConnectedDevice ? "Device Connected" : "No Device"}
+          variant={hasConnectedDevice ? "connected" : "disconnected"}
+        />
         <button
           type="button"
           onClick={() =>

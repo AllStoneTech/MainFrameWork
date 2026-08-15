@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/** Shared labeled range-input control used across MainFrameWork's settings and calibration UI. */
 import type { ReactElement } from "react";
 interface SliderControlProps {
   label: string;

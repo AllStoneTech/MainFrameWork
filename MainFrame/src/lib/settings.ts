@@ -1,3 +1,10 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * Thin wrapper around the Rust-side encrypted settings store (see
+ * persistence.rs). All pages that persist local state (LightingTab,
+ * WidgetsTab, AnimatorTab, etc.) share this single JSON blob, keyed by
+ * their own top-level settings keys.
+ */
 import { invoke } from "@tauri-apps/api/core";
 
 /**

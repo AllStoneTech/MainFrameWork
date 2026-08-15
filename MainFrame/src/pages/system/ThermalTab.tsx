@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * Fan curve editor tab (System Health). See the exported component's doc
+ * comment below for what is and isn't wired to the EC yet.
+ */
 import type { ReactElement } from "react";
 import { useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
@@ -24,6 +29,9 @@ const GRAPH_H = 220;
 const TEMP_MIN = 20;
 const TEMP_MAX = 100;
 
+// Map a curve point's domain values (temp in °C, duty in %) onto SVG
+// viewBox pixel coordinates. Duty is inverted (0% -> bottom, 100% -> top)
+// since SVG y grows downward.
 const xForTemp = (t: number): number => ((t - TEMP_MIN) / (TEMP_MAX - TEMP_MIN)) * GRAPH_W;
 const yForDuty = (d: number): number => GRAPH_H - (d / 100) * GRAPH_H;
 

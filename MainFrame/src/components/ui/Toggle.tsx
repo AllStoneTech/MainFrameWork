@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/** Shared boolean switch control used across MainFrameWork's settings-style UI. */
 import type { ReactElement } from "react";
 interface ToggleProps {
   checked: boolean;

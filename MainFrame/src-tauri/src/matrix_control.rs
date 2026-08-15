@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Serial control for the Framework Laptop 16 LED Matrix input module.
 //!
 //! Protocol reverse-engineered from `app.js` in
@@ -52,6 +54,10 @@ fn find_matrix_ports() -> Result<Vec<String>, String> {
     Ok(matches)
 }
 
+/// Opens a fresh serial connection to the given panel (`"Left"` or
+/// `"Right"`), looking it up fresh via [`find_matrix_ports`] each call —
+/// there is no persistent/cached handle, unlike `keyboard_mapper`'s HID
+/// state.
 fn port_for_panel(panel: &str) -> Result<Box<dyn SerialPort>, String> {
     let index = match panel {
         "Left" => 0,
@@ -70,6 +76,8 @@ fn port_for_panel(panel: &str) -> Result<Box<dyn SerialPort>, String> {
         .map_err(|e| format!("Failed to open port {port_name}: {e}"))
 }
 
+/// Frames and writes one command: `MAGIC ++ [cmd] ++ params`, per the
+/// protocol documented at the top of this module.
 fn send_command(port: &mut dyn SerialPort, cmd: u8, params: &[u8]) -> Result<(), String> {
     let mut bytes = Vec::with_capacity(MAGIC.len() + 1 + params.len());
     bytes.extend_from_slice(&MAGIC);

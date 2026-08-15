@@ -1,10 +1,17 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * Shell for the Matrix Studio pillar. See the exported component's doc
+ * comment below for the Left/Right panel model.
+ */
 import type { ReactElement } from "react";
 import { useState } from "react";
 import { Outlet } from "react-router-dom";
 import { TabBar } from "../../components/ui/TabBar";
 
+/** Which of the two independent 9x34 LED Matrix boards is targeted. */
 export type Panel = "Left" | "Right";
 
+/** Outlet context passed down to Canvas/Widgets/Animator tabs. */
 export interface MatrixStudioContext {
   panel: Panel;
 }

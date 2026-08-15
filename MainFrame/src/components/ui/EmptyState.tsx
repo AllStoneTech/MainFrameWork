@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/** Shared "nothing here yet" placeholder block used across MainFrameWork's list/grid views. */
 import type { ReactElement } from "react";
 import type { LucideIcon } from "lucide-react";
 

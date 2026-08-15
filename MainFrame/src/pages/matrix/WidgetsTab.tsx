@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * Widget composer tab (Matrix Studio). See the exported component's doc
+ * comment below for the three-pane layout and persistence model.
+ */
 import type { ReactElement } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Clock, BatteryMedium, Cpu, AudioLines, GripVertical, X } from "lucide-react";

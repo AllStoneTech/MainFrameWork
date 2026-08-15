@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/** Shared dot-plus-label status indicator used across MainFrameWork's UI. */
 import type { ReactElement } from "react";
 type StatusVariant = "connected" | "disconnected" | "locked" | "warning";
 

@@ -1,4 +1,17 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! MainFrameWork Tauri application entry point.
+//!
+//! Declares the app's module tree, registers all `#[tauri::command]`
+//! handlers exposed to the frontend via `invoke()`, and wires up managed
+//! state (currently just [`keyboard_mapper::KeyboardHidState`], which
+//! caches the HID handle for the keyboard's RGB matrix across calls).
+//! This is the single place new backend commands must be registered or
+//! the frontend will get an "unknown command" error at runtime.
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+/// Trivial example command left over from the Tauri template; not used by
+/// the MainFrameWork UI.
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -11,6 +24,13 @@ mod ec_check;
 mod persistence;
 mod installer;
 
+/// Builds and runs the Tauri application: registers plugins, managed
+/// state, and every invokable command, then blocks on the event loop.
+///
+/// # Panics
+/// Panics if the Tauri runtime fails to start (e.g. webview
+/// initialization failure) — mirrors the Tauri scaffold's default
+/// behavior via `.expect(...)`.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()

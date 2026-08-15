@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * App-level preferences page (theme, stealth mode, Pro upsell, about
+ * block). See the exported component's doc comment below for persistence
+ * status.
+ */
 import type { ReactElement } from "react";
 import { useState } from "react";
 import { Lock, Info } from "lucide-react";

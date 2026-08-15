@@ -1,11 +1,18 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * Shell for the System Intelligence pillar. See the exported component's
+ * doc comment below for the per-tab EC gating model.
+ */
 import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Outlet } from "react-router-dom";
 import { TabBar } from "../../components/ui/TabBar";
 
+/** Result of the Rust-side `check_ec_status` probe. */
 export type EcStatus = "Available" | "DriverMissing" | "NotFramework";
 
+/** Outlet context passed down to Thermal/Battery/Expansion/Sensors tabs. */
 export interface SystemHealthContext {
   ecAvailable: boolean;
 }

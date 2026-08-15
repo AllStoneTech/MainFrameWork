@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * Visual keymap editor tab (Input Studio). See the exported component's
+ * doc comment below for what is and isn't wired to real hardware yet.
+ */
 import type { ReactElement } from "react";
 import { useState } from "react";
 import { Card } from "../../components/ui/Card";

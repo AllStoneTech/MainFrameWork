@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * Shell for the Input Commander pillar. See the exported component's doc
+ * comment below for the device-switcher/tab-bar relationship.
+ */
 import type { ReactElement } from "react";
 import { useState } from "react";
 import { Outlet } from "react-router-dom";

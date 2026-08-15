@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * Pro Automator pillar page: lists per-app switching profiles and lets the
+ * user pick which one is active. See the exported component's doc comment
+ * below for what is and isn't wired up yet.
+ */
 import type { ReactElement } from "react";
 import { useState } from "react";
 import { Plus, AppWindow, Keyboard, Fan } from "lucide-react";

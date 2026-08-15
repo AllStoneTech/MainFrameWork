@@ -9,8 +9,10 @@
   - Initialize Tauri v2 (Rust) + React (TypeScript) + Vite.
   - Configure `tauri.conf.json` for "Single Instance" and "Hardware
     Permissions".
-- [ ] **[Core] Rust Persistence**
-  - Implement `PersistenceState` struct in Rust.
+- [x] **[Core] Rust Persistence**
+  - Implemented as `AppState` + `save_settings()`/`load_settings()` in
+    `persistence.rs` (named differently than originally planned, same
+    result).
   - Add `aes-gcm` crate. Implement `save_encrypted()` and `load_encrypted()`
     functions.
 - [x] **[Feature] Matrix Canvas**

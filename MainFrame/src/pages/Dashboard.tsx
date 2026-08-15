@@ -1,23 +1,28 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * Landing page. Scans for connected Framework Laptop 16 input/matrix
+ * modules via the Rust-side `scan_devices` command on mount and renders
+ * them as a labeled bay hero, a "Hardware Summary" card, and a
+ * "Connected Modules" list — all three driven off the same scan result,
+ * no mock data.
+ */
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Laptop, Keyboard, Grid3X3, Calculator, RefreshCw } from "lucide-react";
+import type { ConnectedDevice } from "../lib/types";
 
-interface ConnectedDevice {
-  vid: number;
-  pid: number;
-  description: string;
-  device_type: string;
-}
-
+/** Home page: hardware bay hero, hardware summary, and connected-device list. */
 export default function Dashboard() {
   const [devices, setDevices] = useState<ConnectedDevice[]>([]);
   const [loading, setLoading] = useState(false);
+  const [lastScanned, setLastScanned] = useState<Date | null>(null);
 
   const scanDevices = async () => {
     setLoading(true);
     try {
       const result = await invoke<ConnectedDevice[]>("scan_devices");
       setDevices(result);
+      setLastScanned(new Date());
     } catch (error) {
       console.error("Scan failed:", error);
     } finally {
@@ -29,6 +34,8 @@ export default function Dashboard() {
     scanDevices();
   }, []);
 
+  // Maps a device_type string from scan_devices to its display icon;
+  // Macropad and Matrix currently share the same Grid3X3 glyph.
   const getIcon = (type: string) => {
     switch (type) {
       case "Keyboard": return <Keyboard size={24} className="text-primary" />;
@@ -95,21 +102,29 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* Hardware Summary card: every value here comes from the last
+            scan_devices result — no mock/placeholder content. */}
         <div className="bg-[#2a2a2a] p-6 rounded-xl border border-white/5 shadow-xl flex flex-col justify-between">
           <div>
-            <h3 className="text-gray-400 text-sm font-medium uppercase tracking-wider mb-4">Command Center</h3>
+            <h3 className="text-gray-400 text-sm font-medium uppercase tracking-wider mb-4">Hardware Summary</h3>
             <div className="flex items-end gap-2 mb-1">
-              <span className="text-4xl font-bold text-white">Online</span>
+              <span className="text-4xl font-bold text-white">{devices.length}</span>
               <span className="relative flex h-3 w-3 mb-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                {devices.length > 0 && (
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                )}
+                <span className={`relative inline-flex rounded-full h-3 w-3 ${devices.length > 0 ? "bg-green-500" : "bg-gray-600"}`}></span>
               </span>
             </div>
-            <div className="text-xs text-gray-400 font-mono">SECURE RELAY ACTIVE</div>
+            <div className="text-xs text-gray-400 font-mono">
+              {devices.length === 1 ? "DEVICE CONNECTED" : "DEVICES CONNECTED"}
+            </div>
           </div>
           <div className="mt-6 pt-4 border-t border-white/5 flex justify-between text-xs text-gray-400">
-            <span>UPTIME</span>
-            <span className="font-mono text-white">00:42:18</span>
+            <span>LAST SCAN</span>
+            <span className="font-mono text-white">
+              {lastScanned ? lastScanned.toLocaleTimeString() : "—"}
+            </span>
           </div>
         </div>
 
