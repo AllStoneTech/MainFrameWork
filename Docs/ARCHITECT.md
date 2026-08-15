@@ -11,24 +11,6 @@
 
 ---
 
----
-
-### Codebase Strategy ("Open Core")
-
-**Planned, not yet implemented** — there is currently no `src/pro`
-directory, submodule, or `pro` Cargo feature in this codebase. Documented
-here as the intended direction, not current architecture.
-
-- **Repo Structure:** Monorepo with a Private Submodule (`src/pro`).
-- **Compilation:** Rust Feature Flags (`#[cfg(feature = "pro")]`).
-  - `cargo build` = **Community Edition** (Fully Functional, Open Source).
-  - `cargo build --features pro` = **Pro Edition** (Includes proprietary
-    sub-crate).
-- **Protection:** Pro logic is physically absent from the public repo,
-  preventing unauthorized compilation of paid features.
-
----
-
 ### System Boundaries
 
 #### Layer 1: The UI (WebView)
@@ -76,6 +58,18 @@ GPLv3 source; see Security Posture below for the honest version.)
      "Thermal" and "Battery" tabs.
   3. **Install:** Provide embedded installer for `CrosEC.sys` (requires Admin).
   4. **Success:** Load driver and proxy EC instruction via IOCTLs.
+
+**D. Tray & Window Lifecycle (`tray.rs`)**
+
+- **Behavior:** Builds a system tray icon with a Show/Quit menu on startup.
+  Intercepts the main window's close event and hides it instead of exiting
+  the process — only the tray's "Quit" item calls `app.exit(0)`.
+- **Why:** Keyboard RGB and LED Matrix state should keep running in the
+  background after the window is closed, not die with it.
+- **Status:** Compiles and links cleanly, not yet manually verified against
+  a running window. See the root [README's System Tray
+  section](../README.md#system-tray) for the user-facing behavior and the
+  same caveat.
 
 ---
 

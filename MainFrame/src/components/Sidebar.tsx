@@ -91,7 +91,9 @@ export function Sidebar() {
         <button
           type="button"
           onClick={() =>
-            openUrl("https://www.AllStoneTech.com").catch((err: unknown) => console.error("Failed to open link:", err))
+            openUrl("https://www.AllStoneTech.com/MainFramework").catch((err: unknown) =>
+              console.error("Failed to open link:", err)
+            )
           }
           title="Designed and Implemented by All Stone Tech"
           className="flex items-center justify-center w-full opacity-50 hover:opacity-100 grayscale hover:grayscale-0 transition-all duration-500"

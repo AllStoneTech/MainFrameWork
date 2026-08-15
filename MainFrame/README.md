@@ -10,6 +10,12 @@ npm install
 npm run tauri dev
 ```
 
+MainFrameWork runs in the system tray — closing the window hides it to the
+tray instead of quitting, so closing the dev window will **not** stop this
+process. Use Ctrl+C in the terminal (or the tray icon's "Quit" item) to
+actually stop it. See the root README's [System
+Tray](../README.md#system-tray) section for the full behavior.
+
 ## Building
 
 ```bash

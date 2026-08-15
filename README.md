@@ -79,6 +79,23 @@ Framework models or third-party hardware are not supported.
 > real Linux hardware yet. If you try it on Linux, bug reports (or
 > confirmations that it works!) are welcome.
 
+## System Tray
+
+MainFrameWork runs in the system tray. Closing the main window **hides it to
+the tray instead of quitting** — the app keeps running in the background (so
+keyboard RGB / LED Matrix state stays live) until you quit it from the tray
+icon's menu. Left-click the tray icon, or use its "Show MainFrameWork" menu
+item, to bring the window back; use its "Quit" item to actually exit.
+
+> **Verification status:** the tray icon and close-to-tray behavior compile
+> and link cleanly (`cargo check` and a full `cargo build` both pass) but
+> haven't been manually click-tested against a running window yet. If it
+> doesn't behave as described here, please open an issue.
+
+Note: Settings' "Stealth Mode" toggle describes hiding the tray icon, but
+isn't actually wired to it yet — toggling it has no effect on the tray icon
+today. That's a known gap, not a bug you need to report.
+
 ## Getting started
 
 ```bash
@@ -86,6 +103,11 @@ cd MainFrame
 npm install
 npm run tauri dev
 ```
+
+**Heads up for `npm run tauri dev`:** since closing the window now hides it
+to the tray instead of quitting, closing the dev window will **not** stop
+the dev server/process — use Ctrl+C in the terminal (or the tray's "Quit"),
+not the window's close button, to actually stop it.
 
 See [MainFrame/README.md](MainFrame/README.md) for IDE setup and more detail
 on the dev workflow.

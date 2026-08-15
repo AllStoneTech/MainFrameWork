@@ -8,20 +8,25 @@
  */
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Laptop, Keyboard, Grid3X3, Calculator, RefreshCw } from "lucide-react";
-import type { ConnectedDevice } from "../lib/types";
+import { Laptop, Keyboard, Grid3X3, Calculator, RefreshCw, Cpu, MemoryStick, MonitorSmartphone } from "lucide-react";
+import type { ConnectedDevice, HardwareSummary } from "../lib/types";
 
-/** Home page: hardware bay hero, hardware summary, and connected-device list. */
+/** Home page: hardware bay hero, host system summary, and connected-device list. */
 export default function Dashboard() {
   const [devices, setDevices] = useState<ConnectedDevice[]>([]);
+  const [hardware, setHardware] = useState<HardwareSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [lastScanned, setLastScanned] = useState<Date | null>(null);
 
   const scanDevices = async () => {
     setLoading(true);
     try {
-      const result = await invoke<ConnectedDevice[]>("scan_devices");
-      setDevices(result);
+      const [devicesResult, hardwareResult] = await Promise.all([
+        invoke<ConnectedDevice[]>("scan_devices"),
+        invoke<HardwareSummary>("get_hardware_summary"),
+      ]);
+      setDevices(devicesResult);
+      setHardware(hardwareResult);
       setLastScanned(new Date());
     } catch (error) {
       console.error("Scan failed:", error);
@@ -102,11 +107,48 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* Hardware Summary card: every value here comes from the last
+        {/* System card: real host hardware/OS info from get_hardware_summary
+            (CPU, GPU, memory, OS) — distinct from the Framework module count
+            below it. CPU usage% reads 0.0 until the second call (see
+            system_info.rs doc comment), since it's a delta measurement. */}
+        <div className="bg-[#2a2a2a] p-6 rounded-xl border border-white/5 shadow-xl">
+          <h3 className="text-gray-400 text-sm font-medium uppercase tracking-wider mb-4">System</h3>
+          {!hardware ? (
+            <div className="text-sm text-gray-500">Loading...</div>
+          ) : (
+            <div className="space-y-3 text-sm">
+              <div className="flex items-start gap-3">
+                <Cpu size={16} className="text-primary mt-0.5 shrink-0" />
+                <div>
+                  <div className="text-white font-medium">{hardware.cpu_name}</div>
+                  <div className="text-xs text-gray-400 font-mono">
+                    {hardware.cpu_cores} cores · {hardware.cpu_usage_percent.toFixed(1)}% used
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <MonitorSmartphone size={16} className="text-primary mt-0.5 shrink-0" />
+                <div className="text-white font-medium">{hardware.gpu_name}</div>
+              </div>
+              <div className="flex items-start gap-3">
+                <MemoryStick size={16} className="text-primary mt-0.5 shrink-0" />
+                <div className="text-xs text-gray-400 font-mono">
+                  {hardware.used_memory_gb.toFixed(1)} / {hardware.total_memory_gb.toFixed(1)} GB RAM
+                </div>
+              </div>
+              <div className="pt-3 border-t border-white/5 text-xs text-gray-400">
+                <div>{hardware.os_name} {hardware.os_version}</div>
+                <div className="font-mono">{hardware.hostname}</div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Framework Devices card: every value here comes from the last
             scan_devices result — no mock/placeholder content. */}
         <div className="bg-[#2a2a2a] p-6 rounded-xl border border-white/5 shadow-xl flex flex-col justify-between">
           <div>
-            <h3 className="text-gray-400 text-sm font-medium uppercase tracking-wider mb-4">Hardware Summary</h3>
+            <h3 className="text-gray-400 text-sm font-medium uppercase tracking-wider mb-4">Framework Devices</h3>
             <div className="flex items-end gap-2 mb-1">
               <span className="text-4xl font-bold text-white">{devices.length}</span>
               <span className="relative flex h-3 w-3 mb-2">
