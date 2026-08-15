@@ -24,10 +24,12 @@ npm run build
 cd src-tauri && cargo build
 ```
 
-There is no automated test suite yet — changes are currently verified by
+CI (`.github/workflows/ci.yml`) runs the same two build commands on every
+push/PR, so a broken build won't merge silently — but there is no automated
+*test* suite yet. Beyond "does it build," changes are currently verified by
 running the app against real hardware (or, for UI-only changes, `npm run
 dev`). If you're adding logic that's easy to get subtly wrong (protocol
-parsing, byte-packing, coordinate math), consider adding one.
+parsing, byte-packing, coordinate math), consider adding a test.
 
 ## Code style
 

@@ -15,6 +15,10 @@
 
 ### Codebase Strategy ("Open Core")
 
+**Planned, not yet implemented** — there is currently no `src/pro`
+directory, submodule, or `pro` Cargo feature in this codebase. Documented
+here as the intended direction, not current architecture.
+
 - **Repo Structure:** Monorepo with a Private Submodule (`src/pro`).
 - **Compilation:** Rust Feature Flags (`#[cfg(feature = "pro")]`).
   - `cargo build` = **Community Edition** (Fully Functional, Open Source).
@@ -31,8 +35,10 @@
 
 - **Responsibility:** Pure visualization.
 - **Constraint:** Zero logic. It just displays the `State` provided by Rust.
-- **Hardware Awareness:** Dynamic. It subscribes to a `hardware_update` event.
-  If the Rust backend says "Numpad Connected", the UI renders the Numpad tab.
+- **Hardware Awareness:** Dynamic — currently via on-demand polling
+  (`invoke("scan_devices")` on mount, and manual "Refresh" buttons). A
+  push-based `hardware_update` event from the Rust backend is the intended
+  direction but isn't implemented yet.
 
 #### Layer 2: The Tauri Bridge (IPC)
 
@@ -43,8 +49,10 @@
 
 #### Layer 3: The Rust Core (Hardware Abstraction)
 
-This is the "Black Box" logic. Being compiled machine code, it is difficult to
-reverse engineer.
+All hardware access — USB, HID, serial, and (where available) the EC —
+happens here, kept separate from the UI layer above. (Note: this used to be
+described as "hard to reverse engineer" — that doesn't hold up for public
+GPLv3 source; see Security Posture below for the honest version.)
 
 **A. Device Manager (The "Scanner")**
 
@@ -61,7 +69,6 @@ reverse engineer.
 
 **C. System Service (EC/Platform)**
 
-- **Linux:** Direct file ops on `/sys/class/power_supply` and `/dev/cros_ec`.
 - **Linux:** Direct file ops on `/sys/class/power_supply` and `/dev/cros_ec`.
 - **Windows (Hybrid Strategy):**
   1. **Probe:** Attempt to open handle to `\\.\CrosEC`.
