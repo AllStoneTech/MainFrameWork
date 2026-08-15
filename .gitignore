@@ -19,7 +19,3 @@ Thumbs.db
 # App Data
 user_data.bin
 *.log
-
-# External Projects
-dotmatrixtool-usbserial
-dotmatrixtool
