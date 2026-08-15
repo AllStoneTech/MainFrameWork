@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# udev rules granting a logged-in desktop user access to Framework Laptop 16
+# devices (USB VID 0x32AC) without running MainFrameWork as root — the
+# keyboard/RGB matrix talk raw USB HID (via hidapi), and the LED Matrix
+# expansion card talks USB serial (via a /dev/ttyACM* or similar node).
+#
+# NOTE: this file has NOT been verified against real Linux hardware — it's a
+# best-effort rule based on the common pattern used by other QMK/VIA-adjacent
+# projects, following the same VID MainFrameWork already checks for in
+# device_manager.rs. MainFrameWork has only been tested on Windows with a
+# real Framework Laptop 16 so far. If this doesn't grant the access you
+# expect (or grants it differently on your distro), please open an issue
+# with your distro, kernel version, and what `ls -l` on the relevant
+# /dev/hidraw* or /dev/ttyACM* node shows.
+#
+# Install:
+#   sudo cp udev/60-mainframework.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules
+#   sudo udevadm trigger
+# Then unplug and replug the affected device (or reboot).
+
+SUBSYSTEM=="usb", ATTR{idVendor}=="32ac", MODE="0666"
+KERNEL=="hidraw*", ATTRS{idVendor}=="32ac", MODE="0666"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="32ac", MODE="0666"
