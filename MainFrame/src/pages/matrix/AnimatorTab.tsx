@@ -21,9 +21,11 @@ const BLANK_FRAME = (): number[] => new Array(WIDTH * HEIGHT).fill(0);
  * `update_matrix` command CanvasTab uses — Play just calls it on every
  * frame tick instead of once. This streams frames live from the host
  * rather than storing the sequence on-device via the module's ANIMATE_CMD
- * (see dotmatrixtool/app.js) — that would let the panel animate without
- * MainFrameWork running, but needs its own protocol verification pass
- * against real hardware before relying on it.
+ * (see ANIMATE_CMD in FrameworkComputer/dotmatrixtool @ 4154b14, app.js:
+ * https://github.com/FrameworkComputer/dotmatrixtool/blob/4154b149ba962305af2b72a51ba419e244796f18/app.js)
+ * — that would let the panel animate without MainFrameWork running, but
+ * needs its own protocol verification pass against real hardware before
+ * relying on it.
  */
 export default function AnimatorTab(): ReactElement {
   const { panel } = useOutletContext<MatrixStudioContext>();

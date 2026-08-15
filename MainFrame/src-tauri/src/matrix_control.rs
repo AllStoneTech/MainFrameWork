@@ -1,8 +1,11 @@
 //! Serial control for the Framework Laptop 16 LED Matrix input module.
 //!
-//! Protocol reverse-engineered from the vendored `dotmatrixtool/app.js`
-//! (a fork of FrameworkComputer/dotmatrixtool) and cross-checked against
-//! the official FrameworkComputer/inputmodule-rs firmware/tooling repo.
+//! Protocol reverse-engineered from `app.js` in
+//! FrameworkComputer/dotmatrixtool @ 4154b14
+//! (https://github.com/FrameworkComputer/dotmatrixtool/blob/4154b149ba962305af2b72a51ba419e244796f18/app.js)
+//! and cross-checked against the official FrameworkComputer/inputmodule-rs
+//! firmware/tooling repo. Pin the commit when comparing — upstream has
+//! moved on since.
 //! Every command is framed as `[0x32, 0xAC, <command_id>, ...params]` over
 //! a 115200-baud USB-CDC serial port — no driver required on Windows or
 //! Linux. The module ships as two independent 9x34 boards (Left/Right),

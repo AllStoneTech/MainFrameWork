@@ -12,8 +12,9 @@ const HEIGHT = 34;
 
 type PatternId = "blank" | "full" | "checkerboard" | "every2row" | "every3row" | "every2col" | "every3col";
 
-// Presets mirrored from the vendored dotmatrixtool's PATTERNS list, applied
-// to our flat WIDTH*HEIGHT brightness buffer.
+// Presets mirrored from the PATTERNS list in FrameworkComputer/dotmatrixtool
+// @ 4154b14 (app.js), applied to our flat WIDTH*HEIGHT brightness buffer.
+// https://github.com/FrameworkComputer/dotmatrixtool/blob/4154b149ba962305af2b72a51ba419e244796f18/app.js
 const PATTERNS: { id: PatternId; label: string }[] = [
   { id: "blank", label: "Blank" },
   { id: "full", label: "Full" },
