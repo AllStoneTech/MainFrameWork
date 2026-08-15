@@ -1,3 +1,17 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Persists user-facing app settings ([`AppState`]) to disk as an
+//! AES-256-GCM encrypted blob under the Tauri app data directory
+//! (`user_data.bin`).
+//!
+//! The encryption key is a compile-time constant (see the note above
+//! [`CONSTANT_KEY`]) — this layer guards against accidental hand-editing
+//! or corruption of the file, not against a determined local attacker.
+//! Exposes two Tauri commands, [`save_settings`] and [`load_settings`],
+//! both operating on the settings as an opaque JSON string so this module
+//! doesn't need to know the frontend's exact settings shape beyond
+//! [`AppState`]'s default.
+
 use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
     AeadCore, Aes256Gcm, Nonce
@@ -8,10 +22,19 @@ use std::path::PathBuf;
 use tauri::AppHandle;
 use tauri::Manager;
 
-// Hardcoded key for MVP (In prod, use OS Keyring)
+// NOTE: this key is a compile-time constant, so it is not a secret — anyone
+// with the source (which is everyone, this is public GPLv3 code) can decrypt
+// user_data.bin. That's acceptable today because AppState below holds no
+// sensitive data (theme, keyboard color, a toggle); this AES layer exists to
+// keep the file from being trivially hand-edited/corrupted, not to provide
+// confidentiality. See SECURITY.md. If a future AppState field needs real
+// secrecy, replace this with a per-machine key (OS keyring, or derived from
+// a machine ID) before storing it.
 // 32 bytes for AES-256
-const CONSTANT_KEY: &[u8; 32] = b"MainFrame_MVP_Secret_Key_32bytes"; 
+const CONSTANT_KEY: &[u8; 32] = b"MainFrame_MVP_Secret_Key_32bytes";
 
+/// User-facing app settings persisted to `user_data.bin`. Serialized to
+/// JSON, then that JSON is what gets encrypted by [`save_settings`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AppState {
     pub theme: String,
@@ -19,6 +42,7 @@ pub struct AppState {
     pub matrix_enabled: bool,
 }
 
+/// Default settings used when no `user_data.bin` exists yet (first run).
 impl Default for AppState {
     fn default() -> Self {
         Self {
@@ -29,10 +53,20 @@ impl Default for AppState {
     }
 }
 
+/// Resolves the on-disk path for the encrypted settings blob, inside the
+/// platform-specific Tauri app data directory.
 fn get_data_path(app: &AppHandle) -> PathBuf {
     app.path().app_data_dir().unwrap().join("user_data.bin")
 }
 
+/// Encrypts `settings_json` (expected to be the JSON-serialized
+/// [`AppState`], though this function itself just treats it as opaque
+/// bytes) with AES-256-GCM and writes `nonce ++ ciphertext` to
+/// `user_data.bin`, creating the app data directory if needed.
+///
+/// # Errors
+/// Returns an error string on encryption failure or any filesystem
+/// error (directory creation, write).
 #[tauri::command]
 pub fn save_settings(app: AppHandle, settings_json: String) -> Result<String, String> {
     // 1. Encrypt
@@ -58,6 +92,14 @@ pub fn save_settings(app: AppHandle, settings_json: String) -> Result<String, St
     Ok("Saved".to_string())
 }
 
+/// Reads and decrypts `user_data.bin`, returning the settings as a JSON
+/// string. If the file doesn't exist yet (first run), returns
+/// [`AppState::default`] serialized to JSON instead of erroring.
+///
+/// # Errors
+/// Returns an error string if the file is too short to contain a nonce,
+/// decryption fails (wrong key or corruption), or the decrypted bytes
+/// aren't valid UTF-8.
 #[tauri::command]
 pub fn load_settings(app: AppHandle) -> Result<String, String> {
     let path = get_data_path(&app);

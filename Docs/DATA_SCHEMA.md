@@ -1,9 +1,15 @@
-# DATA STRATEGY: Encrypted Persistence
+# DATA STRATEGY: Local Persistence
 
 ### Philosophy
 
-**"Secure & Portable."** User data is stored in a single, encrypted binary file.
-It is portable (can be copied) but secure (cannot be read without the app).
+**"Local & Portable."** User data is stored in a single binary file on disk,
+never transmitted anywhere. It's portable (can be copied between machines)
+and lightly obfuscated (AES-256-GCM) so it isn't trivially hand-edited or
+corrupted outside the app — but the encryption key is a public constant in
+the source, so this is not a confidentiality guarantee. That's fine today
+because nothing stored here (theme, profiles, keymaps) is sensitive. See
+[SECURITY.md](../SECURITY.md) for the full explanation and what would need
+to change before storing anything that actually needs to stay secret.
 
 ### Storage Locations
 

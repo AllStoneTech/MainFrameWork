@@ -1,17 +1,20 @@
-# MainFrameWork
+# MainFrameWork (dev quickstart)
 
-A unified desktop control panel for the Framework Laptop 16 — keyboard
-remapping and RGB lighting, LED Matrix drawing/widgets/animation, and
-system health (fans, battery, expansion cards), in one Tauri app.
-
-See [Docs/CONCEPT.md](../Docs/CONCEPT.md) for the product vision and
-[Docs/ARCHITECT.md](../Docs/ARCHITECT.md) for the technical architecture.
+This is the Tauri app itself. For the project overview, feature list, and
+docs index, see the [root README](../README.md).
 
 ## Development
 
 ```bash
 npm install
 npm run tauri dev
+```
+
+## Building
+
+```bash
+npm run build
+cd src-tauri && cargo build
 ```
 
 ## Recommended IDE Setup

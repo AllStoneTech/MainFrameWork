@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * Frame-by-frame animation editor tab (Matrix Studio). See the exported
+ * component's doc comment below for how Play/Upload relate to the real
+ * device protocol and what's deliberately not implemented yet.
+ */
 import type { ReactElement } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";

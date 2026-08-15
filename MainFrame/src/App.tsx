@@ -1,3 +1,14 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * Root route tree. Uses HashRouter (not BrowserRouter) because the app is
+ * served from a `tauri://` / `file://`-style origin in production, where
+ * History-API routing can't resolve paths the way it can on a real HTTP
+ * server. Top-level routes mirror the Sidebar's nav items and the three
+ * feature "pillars" (Input, Matrix, System); each pillar has its own
+ * shell component (InputStudio/MatrixStudio/SystemHealth) that renders a
+ * TabBar plus a nested Outlet for its own sub-tabs, with an index route
+ * that redirects to that pillar's first tab.
+ */
 import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
@@ -20,6 +31,7 @@ import BatteryTab from "./pages/system/BatteryTab";
 import ExpansionTab from "./pages/system/ExpansionTab";
 import SensorsTab from "./pages/system/SensorsTab";
 
+/** Top-level route tree for the whole app; see file header for the routing model. */
 function App() {
   return (
     <HashRouter>

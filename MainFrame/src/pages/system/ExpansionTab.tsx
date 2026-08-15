@@ -1,16 +1,17 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * Expansion Cards tab (System Health). Unlike the other System Health
+ * tabs, this does not go through DriverGate/ecAvailable — see the exported
+ * component's doc comment below for why plain USB enumeration is
+ * sufficient here.
+ */
 import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Grid3X3, RefreshCw, Info } from "lucide-react";
 import { Card } from "../../components/ui/Card";
 import { EmptyState } from "../../components/ui/EmptyState";
-
-interface ConnectedDevice {
-  vid: number;
-  pid: number;
-  description: string;
-  device_type: string;
-}
+import type { ConnectedDevice } from "../../lib/types";
 
 /**
  * Detected Expansion Cards, sourced from the same `scan_devices` USB scan

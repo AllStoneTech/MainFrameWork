@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/** Shared dark glass panel container primitive used across MainFrameWork's pages. */
 import type { HTMLAttributes, ReactElement, ReactNode } from "react";
 
 interface CardProps extends HTMLAttributes<HTMLDivElement> {

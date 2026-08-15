@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * Live draw canvas tab (Matrix Studio). See the exported component's doc
+ * comment below for the wire protocol this speaks to the real device.
+ */
 import type { ReactElement } from "react";
 import { useState } from "react";
 import { useOutletContext } from "react-router-dom";

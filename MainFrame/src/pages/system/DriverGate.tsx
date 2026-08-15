@@ -1,29 +1,18 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import type { ReactElement } from "react";
-import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { ShieldAlert, Download } from "lucide-react";
+import { ShieldAlert, Clock } from "lucide-react";
 
 /**
  * Shared "needs EC driver" gate shown in place of Thermal/Battery/Sensors
  * tab content when `check_ec_status` reports the CrosEC driver is missing.
  * The Expansion tab does not use this gate — bay occupancy is plain USB
  * enumeration and works without EC access per ARCHITECT.md's Tier 1/2 split.
+ *
+ * The install button is intentionally disabled: the backend's
+ * `install_driver` command (installer.rs) doesn't install anything yet, so
+ * there is nothing here to wire up until that's implemented for real.
  */
 export function DriverGate(): ReactElement {
-  const [installing, setInstalling] = useState(false);
-
-  const handleInstall = async (): Promise<void> => {
-    setInstalling(true);
-    try {
-      await invoke("install_driver");
-      alert("Driver Simulation Successful. Please restart the app.");
-      window.location.reload();
-    } catch (err) {
-      alert("Installation Failed: " + err);
-      setInstalling(false);
-    }
-  };
-
   return (
     <div className="h-full flex items-center justify-center">
       <div className="max-w-md text-center">
@@ -39,16 +28,11 @@ export function DriverGate(): ReactElement {
         </p>
 
         <button
-          onClick={handleInstall}
-          disabled={installing}
-          className="bg-primary hover:bg-orange-600 text-black font-bold py-3 px-6 rounded-lg flex items-center gap-2 mx-auto transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled
+          className="bg-gray-700 text-gray-400 font-bold py-3 px-6 rounded-lg flex items-center gap-2 mx-auto cursor-not-allowed"
         >
-          {installing ? (
-            <div className="animate-spin w-5 h-5 border-2 border-black border-t-transparent rounded-full" />
-          ) : (
-            <Download size={20} />
-          )}
-          {installing ? "Installing..." : "Install CrosEC Driver"}
+          <Clock size={20} />
+          Coming Soon
         </button>
 
         <p className="mt-6 text-xs text-gray-400">

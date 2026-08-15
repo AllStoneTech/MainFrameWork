@@ -1,7 +1,13 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * Shared pill-style sub-navigation bar used by the Input, Matrix, and
+ * System Health pillar shells to switch between their nested tab routes.
+ */
 import type { ReactElement } from "react";
 import { NavLink } from "react-router-dom";
 import type { LucideIcon } from "lucide-react";
 
+/** One route/tab entry rendered by {@link TabBar}. */
 export interface TabBarItem {
   to: string;
   label: string;

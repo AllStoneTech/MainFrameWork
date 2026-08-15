@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * Macro list tab (Input Studio). See the exported component's doc comment
+ * below — this is a UI/layout stub, not yet wired to real macro
+ * recording/playback.
+ */
 import type { ReactElement } from "react";
 import { useState } from "react";
 import { Circle, Play, Trash2, Plus } from "lucide-react";

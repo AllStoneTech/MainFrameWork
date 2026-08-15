@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * App shell layout: pins the Sidebar and renders the active route's page
+ * inside a scrollable `<main>` via React Router's Outlet.
+ */
 import type { ReactElement } from "react";
 import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";

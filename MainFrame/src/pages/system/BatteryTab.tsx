@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * Battery Guardian tab (System Health). See the exported component's doc
+ * comment below for what is and isn't wired to the EC yet.
+ */
 import type { ReactElement } from "react";
 import { useState } from "react";
 import { useOutletContext } from "react-router-dom";

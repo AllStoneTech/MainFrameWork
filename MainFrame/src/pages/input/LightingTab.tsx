@@ -1,3 +1,10 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * Keyboard RGB Matrix control tab (Input Studio). See the EFFECTS catalog
+ * comment below for important caveats about which effect names are
+ * actually confirmed against real hardware, and the exported component's
+ * doc comment for the live-apply/EEPROM-persist behavior.
+ */
 import type { ReactElement } from "react";
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";

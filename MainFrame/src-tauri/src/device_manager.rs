@@ -1,8 +1,22 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! USB device discovery for Framework Laptop 16 accessories.
+//!
+//! Enumerates the system USB bus via `rusb` (libusb) and filters for
+//! Framework's vendor ID, then maps known product IDs to a friendly
+//! name/category. Exposes a single Tauri command, [`scan_devices`], used
+//! by the frontend to populate the device list. VID/PID values here are
+//! hardware-specific to the Framework Laptop 16 and its expansion card
+//! ecosystem — see the comment above [`identify_device`] for how each
+//! entry was confirmed.
+
 use framework_lib::audio_card::AUDIO_CARD_PID;
 use serde::Serialize;
 
 const FRAMEWORK_VID: u16 = 0x32AC;
 
+/// A USB device on the bus that matches Framework's vendor ID, with a
+/// best-effort friendly name and category attached by [`identify_device`].
 #[derive(Serialize, Debug, Clone)]
 pub struct ConnectedDevice {
     pub vid: u16,
@@ -28,6 +42,9 @@ pub struct ConnectedDevice {
 // the plugged-in peripheral's PID, not the card's. Numpad/Macropad PIDs
 // are also still unconfirmed — both intentionally fall through to
 // "Unknown" rather than guess again.
+/// Maps a Framework-VID device's PID to a `(friendly_name, category)` pair.
+/// Falls through to `"Unknown"` for anything not explicitly confirmed
+/// rather than guessing.
 fn identify_device(pid: u16) -> (String, String) {
     match pid {
         0x0012 => ("Framework Laptop 16 Keyboard".to_string(), "Keyboard".to_string()),
@@ -38,6 +55,13 @@ fn identify_device(pid: u16) -> (String, String) {
     }
 }
 
+/// Scans the USB bus for connected Framework devices and returns them
+/// classified by PID via [`identify_device`].
+///
+/// # Errors
+/// Returns an error string if the USB bus itself can't be accessed
+/// (e.g. missing libusb backend); individual device descriptor read
+/// failures are silently skipped rather than failing the whole scan.
 #[tauri::command]
 pub fn scan_devices() -> Result<Vec<ConnectedDevice>, String> {
     println!("Scanning for Framework Devices (VID: {:04x})...", FRAMEWORK_VID);

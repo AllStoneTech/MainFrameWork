@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * Live telemetry tab (System Health). See the exported component's doc
+ * comment below — values are simulated locally, not read from the EC yet.
+ */
 import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";

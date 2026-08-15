@@ -16,8 +16,13 @@ a "Polished Flagship Machine."
    battery limit in one window.
 2. **Lightweight & Portable:** Built with **Tauri (Rust)**. A single small
    executable (`.exe`/`.AppImage`) (~10MB) that requires no installation.
-3. **Secure & Private:** Data is encrypted at rest. core logic is compiled to
-   native machine code (Rust) to prevent reverse engineering.
+3. **Local-Only, Zero Telemetry:** MainFrameWork never talks to the internet.
+   No cloud sync, no analytics, no accounts. The only outbound request in the
+   entire app is a manual "visit our website" link — everything else runs
+   fully offline against your own hardware. Settings are stored on disk with
+   a light AES layer to keep the file from being hand-edited/corrupted, not
+   as a security claim — see [SECURITY.md](../SECURITY.md) for the honest
+   version of that story.
 4. **Cross-Platform:** A single code base that runs natively on Windows and
    Linux.
 

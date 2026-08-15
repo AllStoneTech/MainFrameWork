@@ -72,11 +72,28 @@ reverse engineer.
 
 ---
 
-### Security & Obfuscation Strategy
+### Security Posture (Honest Version)
 
-1. **Compiled Core:** The business logic (how we talk to the EC, how we map
-   keys) is compiled to native Assembly. It is not readable like JavaScript.
-2. **Data At Rest:** The `user_data.bin` file is encrypted with AES-256-GCM. The
-   key is hardcoded (obfuscated) in the Rust binary or derived from machine ID.
-3. **App Isolation:** Tauri locks down the WebView. No external URLs allowed.
-   CSP (Content Security Policy) set to strict.
+MainFrameWork's source is public (GPLv3), so any framing built on "compiled
+code is hard to read" or "the key is hidden in the binary" doesn't hold up —
+anyone can read the Rust source directly. The actual posture is simpler and,
+we think, a better pitch anyway:
+
+1. **No Network Surface:** The app makes zero outbound network calls except
+   one manual "open our website" link (`Sidebar.tsx`, via the system
+   browser). There's no server to compromise, no telemetry to leak, and
+   nothing to intercept in transit, because nothing is ever in transit.
+2. **Data At Rest:** `user_data.bin` is AES-256-GCM "encrypted," but the key
+   (`CONSTANT_KEY` in `persistence.rs`) is a compile-time constant — public,
+   same on every install. This layer exists to keep the file from being
+   casually hand-edited or corrupted, not to provide confidentiality. It's
+   appropriate today because the file holds no sensitive data (theme,
+   keyboard color, a toggle). See [SECURITY.md](../SECURITY.md). If a future
+   field needs real secrecy, the key needs to move to something per-machine
+   (OS keyring or a machine-ID-derived key) before that data is stored.
+3. **App Isolation:** Tauri's WebView has a Content-Security-Policy set in
+   `tauri.conf.json` (`default-src 'self'; style-src 'self' 'unsafe-inline';
+   img-src 'self' data: asset: https://asset.localhost; connect-src 'self'
+   ipc: http://ipc.localhost`), scoped to what the frontend actually uses:
+   locally-bundled assets, inline styles (used for dynamic pixel/sensor
+   colors), and the Tauri IPC channel. No external origins are permitted.

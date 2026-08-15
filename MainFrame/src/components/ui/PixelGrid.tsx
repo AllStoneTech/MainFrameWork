@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * Shared LED-matrix grid renderer used by Matrix Studio's Canvas, Animator,
+ * and Widgets tabs. Purely presentational — callers own the pixel buffer
+ * and drawing state.
+ */
 import type { ReactElement } from "react";
 interface PixelGridProps {
   width: number;
