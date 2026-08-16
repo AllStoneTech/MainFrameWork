@@ -13,6 +13,8 @@
 //! `cpu_usage_percent` reads `0.0` until a second call is made — the
 //! frontend's manual refresh button naturally provides that second call.
 
+use dmidecode::Structure;
+use framework_lib::smbios::{self, PlatformFamily};
 use serde::Serialize;
 use std::process::Command;
 use std::sync::Mutex;
@@ -31,6 +33,50 @@ pub struct HardwareSummary {
     pub os_version: String,
     pub kernel_version: String,
     pub hostname: String,
+    /// Friendly Framework model name (e.g. "Framework Laptop 16"), or
+    /// `None` on a non-Framework PC — or on Linux without root, where
+    /// SMBIOS simply isn't readable (see [`framework_system_name`]).
+    pub framework_system: Option<String>,
+}
+
+/// Whether the SMBIOS manufacturer string is literally "Framework".
+///
+/// Deliberately doesn't use `framework_lib::smbios::is_framework()`: as of
+/// framework_lib 0.6.5, that function treats `Platform::UnknownSystem` as a
+/// Framework match — but `get_platform()` returns `UnknownSystem` for
+/// *any* SMBIOS product string it doesn't recognize, Framework or not, so
+/// `is_framework()` ends up true on non-Framework PCs too (its accurate
+/// manufacturer-check fallback is dead code; the `UnknownSystem` branch
+/// always fires first). Checking the manufacturer field directly — what
+/// that fallback does — is the actually-correct version of the same idea.
+fn smbios_manufacturer_is_framework() -> bool {
+    let Some(store) = smbios::get_smbios() else {
+        return false;
+    };
+    store
+        .structures()
+        .any(|result| matches!(result, Ok(Structure::System(sys)) if sys.manufacturer == "Framework"))
+}
+
+/// Friendly Framework model name from SMBIOS, or `None` if this isn't a
+/// Framework system. Recognized platforms (Laptop 12/13/16, Desktop) get a
+/// clean family name; an unrecognized-but-genuine Framework board falls
+/// back to the raw SMBIOS product string rather than guessing.
+///
+/// On Linux, reading SMBIOS requires root — this returns `None` for a
+/// regular user even on real Framework hardware, since there's no data to
+/// read, not because the check failed.
+fn framework_system_name() -> Option<String> {
+    if !smbios_manufacturer_is_framework() {
+        return None;
+    }
+    Some(match smbios::get_family() {
+        Some(PlatformFamily::Framework12) => "Framework Laptop 12".to_string(),
+        Some(PlatformFamily::Framework13) => "Framework Laptop 13".to_string(),
+        Some(PlatformFamily::Framework16) => "Framework Laptop 16".to_string(),
+        Some(PlatformFamily::FrameworkDesktop) => "Framework Desktop".to_string(),
+        None => smbios::get_product_name().unwrap_or_else(|| "Framework system".to_string()),
+    })
 }
 
 /// Caches a [`System`] across calls so CPU usage can be measured as a
@@ -104,5 +150,6 @@ pub fn get_hardware_summary(state: tauri::State<SystemInfoState>) -> Result<Hard
         os_version: System::os_version().unwrap_or_default(),
         kernel_version: System::kernel_version().unwrap_or_default(),
         hostname: System::host_name().unwrap_or_default(),
+        framework_system: framework_system_name(),
     })
 }

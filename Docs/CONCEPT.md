@@ -2,11 +2,11 @@
 
 ### The Vision
 
-**"One App to Rule Them All."** The Framework Laptop 16 is a masterpiece of
-modular hardware, but its software ecosystem is fragmented. **MainFrameWork**
-unifies these tools into a single, ultra-lightweight, local-only desktop
-application. It transforms the Framework 16 from a "DIY Tinkerer's Laptop" into
-a "Polished Flagship Machine."
+**"One App to Rule Them All."** Framework's modular hardware is a
+masterpiece of design, but its software ecosystem is fragmented.
+**MainFrameWork** unifies these tools into a single, ultra-lightweight,
+local-only desktop application. It transforms Framework hardware from a
+"DIY Tinkerer's Laptop" into a "Polished Flagship Machine."
 
 ---
 
