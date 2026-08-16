@@ -9,8 +9,10 @@ labels: bug
 
 **MainFrameWork version:** (from the sidebar, e.g. v0.1.0)
 
-**Hardware:** Framework Laptop 16 — which modules were connected (keyboard,
-Numpad, RGB Macropad, LED Matrix, expansion cards)?
+**Hardware:** What's the app running on (Framework Laptop 13/16, Framework
+Desktop, or another PC with Framework modules attached), and which modules
+were connected (keyboard, Numpad, RGB Macropad, LED Matrix, expansion
+cards)?
 
 **What happened:**
 

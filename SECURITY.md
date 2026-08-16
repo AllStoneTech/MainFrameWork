@@ -2,9 +2,11 @@
 
 ## Threat model, honestly
 
-MainFrameWork is a **local-only desktop app**. It talks to your Framework
-Laptop 16's USB devices and (where available) its embedded controller — it
-does not talk to the internet. The only outbound network request anywhere
+MainFrameWork is a **local-only desktop app**. It talks to Framework USB
+peripherals (keyboard, LED Matrix, expansion cards) wherever they're
+plugged in — not necessarily a Framework-branded PC — and, where available,
+to a genuine Framework mainboard's embedded controller. It does not talk to
+the internet. The only outbound network request anywhere
 in the codebase is a manual "visit our website" link
 ([`Sidebar.tsx`](MainFrame/src/components/Sidebar.tsx)) opened in your
 system browser when you click it; nothing else ever leaves your machine.

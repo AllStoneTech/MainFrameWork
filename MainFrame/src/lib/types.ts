@@ -28,4 +28,6 @@ export interface HardwareSummary {
   os_version: string;
   kernel_version: string;
   hostname: string;
+  /** Friendly Framework model name (e.g. "Framework Laptop 16"), or null on a non-Framework PC. */
+  framework_system: string | null;
 }

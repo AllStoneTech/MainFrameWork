@@ -108,15 +108,31 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {/* System card: real host hardware/OS info from get_hardware_summary
-            (CPU, GPU, memory, OS) — distinct from the Framework module count
-            below it. CPU usage% reads 0.0 until the second call (see
-            system_info.rs doc comment), since it's a delta measurement. */}
+            (CPU, GPU, memory, OS, and which Framework model this is via
+            SMBIOS — or "Non-Framework PC" if it isn't one) — distinct from
+            the Framework module count below it. CPU usage% reads 0.0 until
+            the second call (see system_info.rs doc comment), since it's a
+            delta measurement. Framework detection reads null on Linux
+            without root (see framework_system_name's doc comment), which
+            shows as "Non-Framework PC" even on real Framework hardware —
+            a known false negative, not a bug report. */}
         <div className="bg-[#2a2a2a] p-6 rounded-xl border border-white/5 shadow-xl">
           <h3 className="text-gray-400 text-sm font-medium uppercase tracking-wider mb-4">System</h3>
           {!hardware ? (
             <div className="text-sm text-gray-500">Loading...</div>
           ) : (
             <div className="space-y-3 text-sm">
+              <div>
+                {hardware.framework_system ? (
+                  <span className="inline-block px-2 py-0.5 rounded-full bg-primary/10 border border-primary/30 text-primary text-xs font-bold">
+                    {hardware.framework_system}
+                  </span>
+                ) : (
+                  <span className="inline-block px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-gray-400 text-xs font-medium">
+                    Non-Framework PC
+                  </span>
+                )}
+              </div>
               <div className="flex items-start gap-3">
                 <Cpu size={16} className="text-primary mt-0.5 shrink-0" />
                 <div>
