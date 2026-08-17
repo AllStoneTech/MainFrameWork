@@ -7,6 +7,7 @@ import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
+import { Moon, Sun } from "lucide-react";
 import { TabBar } from "../../components/ui/TabBar";
 import type { ConnectedDevice } from "../../lib/types";
 
@@ -43,11 +44,20 @@ export interface MatrixStudioContext {
  * in (via hub-port topology, not the port-name-sort guess above) and
  * shows it as a caption under the switcher — see that command's doc
  * comment in matrix_control.rs for what it can and can't tell us.
+ *
+ * Sleep/Wake live here rather than in CanvasTab/AnimatorTab so they're
+ * available from both — panel power state isn't specific to which editor
+ * you're in. `sleepState` is optimistic (set from what we just sent, not
+ * read back from the device) and resets to unknown whenever the selected
+ * panel changes, since a freshly-selected panel's actual state is
+ * unknown until you interact with it.
  */
 export default function MatrixStudio(): ReactElement {
   const [panel, setPanel] = useState<Panel>("Panel 1");
   const [panelCount, setPanelCount] = useState<number | null>(null);
   const [bayHint, setBayHint] = useState<string | null>(null);
+  const [sleepState, setSleepState] = useState<"asleep" | "awake" | null>(null);
+  const [sleepError, setSleepError] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<ConnectedDevice[]>("scan_devices")
@@ -64,34 +74,85 @@ export default function MatrixStudio(): ReactElement {
 
   const onlyOnePanel = panelCount !== null && panelCount <= 1;
 
+  const selectPanel = (p: Panel): void => {
+    setPanel(p);
+    setSleepState(null);
+    setSleepError(null);
+  };
+
+  const handleSleep = async (sleep: boolean): Promise<void> => {
+    setSleepError(null);
+    try {
+      await invoke("set_matrix_sleep", { panel, sleep });
+      setSleepState(sleep ? "asleep" : "awake");
+    } catch (error) {
+      console.error("Sleep toggle failed:", error);
+      setSleepError(String(error));
+    }
+  };
+
   return (
     <div className="p-8 h-full flex flex-col">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-start justify-between mb-6 flex-wrap gap-4">
         <h1 className="text-3xl font-bold text-white">Matrix Studio</h1>
         <div className="flex flex-col items-end gap-1">
-          <div className="flex gap-2 p-1 bg-black/20 border border-white/10 rounded-lg">
-            {(["Panel 1", "Panel 2"] as const).map((p) => {
-              const disabled = p === "Panel 2" && onlyOnePanel;
-              return (
-                <button
-                  key={p}
-                  onClick={() => !disabled && setPanel(p)}
-                  disabled={disabled}
-                  title={disabled ? "Only one LED Matrix panel detected" : undefined}
-                  className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                    disabled
-                      ? "text-gray-600 cursor-not-allowed"
-                      : panel === p
-                      ? "bg-primary text-black"
-                      : "text-gray-400 hover:text-white"
-                  }`}
-                >
-                  {p}
-                </button>
-              );
-            })}
+          <div className="flex items-center gap-3">
+            <div className="flex gap-1">
+              <button
+                title="Sleep"
+                onClick={() => handleSleep(true)}
+                className={`p-2 rounded-lg border transition-colors ${
+                  sleepState === "asleep"
+                    ? "bg-primary/10 border-primary/50 text-primary"
+                    : "bg-black/20 border-white/10 text-gray-400 hover:text-white"
+                }`}
+              >
+                <Moon size={16} />
+              </button>
+              <button
+                title="Wake"
+                onClick={() => handleSleep(false)}
+                className={`p-2 rounded-lg border transition-colors ${
+                  sleepState === "awake"
+                    ? "bg-primary/10 border-primary/50 text-primary"
+                    : "bg-black/20 border-white/10 text-gray-400 hover:text-white"
+                }`}
+              >
+                <Sun size={16} />
+              </button>
+            </div>
+            <div className="flex gap-2 p-1 bg-black/20 border border-white/10 rounded-lg">
+              {(["Panel 1", "Panel 2"] as const).map((p) => {
+                const disabled = p === "Panel 2" && onlyOnePanel;
+                return (
+                  <button
+                    key={p}
+                    onClick={() => !disabled && selectPanel(p)}
+                    disabled={disabled}
+                    title={disabled ? "Only one LED Matrix panel detected" : undefined}
+                    className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                      disabled
+                        ? "text-gray-600 cursor-not-allowed"
+                        : panel === p
+                        ? "bg-primary text-black"
+                        : "text-gray-400 hover:text-white"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          {bayHint && <span className="text-xs text-gray-500">Detected in {bayHint}</span>}
+          <div className="flex flex-col items-end gap-0.5">
+            {sleepState && (
+              <span className="text-xs text-gray-500">
+                {sleepState === "asleep" ? "Sleeping" : "Awake"}
+              </span>
+            )}
+            {bayHint && <span className="text-xs text-gray-500">Detected in {bayHint}</span>}
+            {sleepError && <span className="text-xs text-red-500 max-w-xs text-right">{sleepError}</span>}
+          </div>
         </div>
       </div>
 

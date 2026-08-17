@@ -7,13 +7,15 @@ import type { ReactElement } from "react";
 import { useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { Eraser, Pen, Upload, Moon, Sun } from "lucide-react";
+import { Upload } from "lucide-react";
 import { PixelGrid } from "../../components/ui/PixelGrid";
 import { SliderControl } from "../../components/ui/SliderControl";
+import { useBrushPaint } from "../../lib/pixelBrush";
 import type { MatrixStudioContext } from "./MatrixStudio";
 
 const WIDTH = 9;
 const HEIGHT = 34;
+const MAX_PEN_SIZE = 5;
 
 type PatternId = "blank" | "full" | "checkerboard" | "every2row" | "every3row" | "every2col" | "every3col";
 
@@ -29,6 +31,14 @@ const PATTERNS: { id: PatternId; label: string }[] = [
   { id: "every2col", label: "Every 2nd Col" },
   { id: "every3col", label: "Every 3rd Col" },
 ];
+
+// Explicit per-option colors, not just a class on <select>: native <option>
+// popups render in their own layer that follows OS dark-mode automatically
+// when unstyled, which was landing on low-contrast light-gray-on-dark-gray
+// text — illegible. `colorScheme: "dark"` plus explicit option colors below
+// fixes it reliably instead of hoping Tailwind classes cascade into that
+// layer.
+const OPTION_STYLE = { color: "#e5e5e5", backgroundColor: "#1a1a1a" };
 
 function generatePattern(id: PatternId): number[] {
   const out = new Array(WIDTH * HEIGHT).fill(0);
@@ -57,22 +67,19 @@ function generatePattern(id: PatternId): number[] {
  * `[0x32,0xAC,cmd,...params]` and bit-packs the buffer into the 39-byte
  * DRAW_CMD payload matrix_control.rs expects. Confirmed working against
  * a real module — see the doc comment at the top of matrix_control.rs.
+ *
+ * No separate Pen/Eraser tool — see `useBrushPaint`'s doc comment for the
+ * click-to-toggle, drag-to-paint model this shares with AnimatorTab, and
+ * the Pen Size slider for brush width.
  */
 export default function CanvasTab(): ReactElement {
   const { panel } = useOutletContext<MatrixStudioContext>();
   const [pixels, setPixels] = useState<number[]>(new Array(WIDTH * HEIGHT).fill(0));
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [tool, setTool] = useState<"pen" | "eraser">("pen");
+  const [penSize, setPenSize] = useState(1);
   const [brightness, setBrightness] = useState(255);
   const [status, setStatus] = useState<string>("");
 
-  const handlePixelAction = (index: number): void => {
-    setPixels((prev) => {
-      const next = [...prev];
-      next[index] = tool === "pen" ? 255 : 0;
-      return next;
-    });
-  };
+  const { onPixelDown, onPixelEnter, stopDrawing } = useBrushPaint(pixels, setPixels, WIDTH, HEIGHT, penSize);
 
   const applyPattern = (id: PatternId): void => setPixels(generatePattern(id));
 
@@ -97,59 +104,20 @@ export default function CanvasTab(): ReactElement {
     }
   };
 
-  const handleSleep = async (sleep: boolean): Promise<void> => {
-    try {
-      await invoke("set_matrix_sleep", { panel, sleep });
-    } catch (error) {
-      console.error("Sleep toggle failed:", error);
-    }
-  };
-
   return (
-    <div
-      className="h-full flex flex-col"
-      onPointerUp={() => setIsDrawing(false)}
-      onPointerLeave={() => setIsDrawing(false)}
-    >
+    <div className="h-full flex flex-col" onPointerUp={stopDrawing} onPointerLeave={stopDrawing}>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-        <div className="flex gap-2">
-          <button
-            onClick={() => setTool("pen")}
-            className={`p-2 rounded-lg border flex items-center gap-2 ${tool === "pen" ? "bg-primary text-black border-primary" : "bg-black/20 border-white/10 text-gray-400"}`}
-          >
-            <Pen size={18} /> Pen
-          </button>
-          <button
-            onClick={() => setTool("eraser")}
-            className={`p-2 rounded-lg border flex items-center gap-2 ${tool === "eraser" ? "bg-primary text-black border-primary" : "bg-black/20 border-white/10 text-gray-400"}`}
-          >
-            <Eraser size={18} /> Eraser
-          </button>
-          <select
-            onChange={(e) => applyPattern(e.target.value as PatternId)}
-            defaultValue=""
-            className="px-3 py-2 bg-black/20 border border-white/10 rounded-lg text-sm text-gray-400 hover:text-white"
-          >
-            <option value="" disabled>Pattern...</option>
-            {PATTERNS.map((p) => (
-              <option key={p.id} value={p.id}>{p.label}</option>
-            ))}
-          </select>
-          <button
-            title="Sleep"
-            onClick={() => handleSleep(true)}
-            className="px-3 py-2 bg-black/20 border border-white/10 rounded-lg text-gray-400 hover:text-white"
-          >
-            <Moon size={18} />
-          </button>
-          <button
-            title="Wake"
-            onClick={() => handleSleep(false)}
-            className="px-3 py-2 bg-black/20 border border-white/10 rounded-lg text-gray-400 hover:text-white"
-          >
-            <Sun size={18} />
-          </button>
-        </div>
+        <select
+          onChange={(e) => applyPattern(e.target.value as PatternId)}
+          defaultValue=""
+          style={{ colorScheme: "dark" }}
+          className="px-3 py-2 bg-black/20 border border-white/10 rounded-lg text-sm text-gray-200 hover:text-white"
+        >
+          <option value="" disabled style={OPTION_STYLE}>Pattern...</option>
+          {PATTERNS.map((p) => (
+            <option key={p.id} value={p.id} style={OPTION_STYLE}>{p.label}</option>
+          ))}
+        </select>
         <button
           onClick={uploadToDevice}
           disabled={status === "Uploading..."}
@@ -159,8 +127,13 @@ export default function CanvasTab(): ReactElement {
         </button>
       </div>
 
-      <div className="w-full max-w-xs mb-4">
-        <SliderControl label="Brightness" value={brightness} min={0} max={255} onChange={handleBrightnessChange} />
+      <div className="flex flex-wrap gap-6 w-full max-w-md mb-4">
+        <div className="flex-1 min-w-[140px]">
+          <SliderControl label="Brightness" value={brightness} min={0} max={255} onChange={handleBrightnessChange} />
+        </div>
+        <div className="flex-1 min-w-[140px]">
+          <SliderControl label="Pen Size" value={penSize} min={1} max={MAX_PEN_SIZE} unit="px" onChange={setPenSize} />
+        </div>
       </div>
 
       {status && status !== "Uploading..." && status !== "Success" && (
@@ -184,11 +157,8 @@ export default function CanvasTab(): ReactElement {
               pixels={pixels}
               cellSize={16}
               gap={4}
-              onPixelDown={(i) => {
-                setIsDrawing(true);
-                handlePixelAction(i);
-              }}
-              onPixelEnter={(i) => isDrawing && handlePixelAction(i)}
+              onPixelDown={onPixelDown}
+              onPixelEnter={onPixelEnter}
             />
           </div>
         </div>

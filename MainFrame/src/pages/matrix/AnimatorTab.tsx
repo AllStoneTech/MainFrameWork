@@ -11,12 +11,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { Play, Pause, Plus, Trash2, Upload } from "lucide-react";
 import { Card } from "../../components/ui/Card";
 import { PixelGrid } from "../../components/ui/PixelGrid";
+import { SliderControl } from "../../components/ui/SliderControl";
+import { useBrushPaint } from "../../lib/pixelBrush";
 import { loadSettings, patchSettings } from "../../lib/settings";
 import type { MatrixStudioContext } from "./MatrixStudio";
 
 const WIDTH = 9;
 const HEIGHT = 34;
 const FRAME_INTERVAL_MS = 200;
+const MAX_PEN_SIZE = 5;
 const SETTINGS_KEY = "matrix_animator_frames";
 const BLANK_FRAME = (): number[] => new Array(WIDTH * HEIGHT).fill(0);
 
@@ -32,11 +35,16 @@ const BLANK_FRAME = (): number[] => new Array(WIDTH * HEIGHT).fill(0);
  * — that would let the panel animate without MainFrameWork running, but
  * needs its own protocol verification pass against real hardware before
  * relying on it.
+ *
+ * Drawing on the active frame uses the same click-to-toggle,
+ * drag-to-paint `useBrushPaint` model as CanvasTab — no separate
+ * Pen/Eraser tool, same shared Pen Size control.
  */
 export default function AnimatorTab(): ReactElement {
   const { panel } = useOutletContext<MatrixStudioContext>();
   const [frames, setFrames] = useState<number[][]>([BLANK_FRAME()]);
   const [activeFrame, setActiveFrame] = useState(0);
+  const [penSize, setPenSize] = useState(1);
   const [playing, setPlaying] = useState(false);
   const [status, setStatus] = useState("");
   const intervalRef = useRef<number | null>(null);
@@ -77,15 +85,21 @@ export default function AnimatorTab(): ReactElement {
     };
   }, [playing, frames, panel]);
 
-  const togglePixel = (index: number): void => {
+  const setActiveFramePixels = (updater: (prev: number[]) => number[]): void => {
     setFrames((prev) => {
       const next = [...prev];
-      const frame = [...next[activeFrame]];
-      frame[index] = frame[index] > 0 ? 0 : 255;
-      next[activeFrame] = frame;
+      next[activeFrame] = updater(next[activeFrame]);
       return next;
     });
   };
+
+  const { onPixelDown, onPixelEnter, stopDrawing } = useBrushPaint(
+    frames[activeFrame],
+    setActiveFramePixels,
+    WIDTH,
+    HEIGHT,
+    penSize
+  );
 
   const addFrame = (): void => {
     setFrames((prev) => [...prev, BLANK_FRAME()]);
@@ -111,7 +125,11 @@ export default function AnimatorTab(): ReactElement {
   };
 
   return (
-    <div className="h-full flex flex-col gap-4">
+    <div
+      className="h-full flex flex-col gap-4"
+      onPointerUp={stopDrawing}
+      onPointerLeave={stopDrawing}
+    >
       {/* overflow-auto (previously missing entirely, so an oversized grid
           just clipped with no way to scroll) + no items-center, same
           top-clipping trap as CanvasTab — see its comment for why. */}
@@ -123,7 +141,8 @@ export default function AnimatorTab(): ReactElement {
             pixels={frames[activeFrame]}
             cellSize={16}
             gap={4}
-            onPixelDown={togglePixel}
+            onPixelDown={onPixelDown}
+            onPixelEnter={onPixelEnter}
           />
         </div>
       </Card>
@@ -133,11 +152,14 @@ export default function AnimatorTab(): ReactElement {
       )}
 
       <Card className="p-4">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-3">
           <h3 className="text-sm font-bold text-white">
             Frame {activeFrame + 1} / {frames.length}
           </h3>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-3">
+            <div className="w-36">
+              <SliderControl label="Pen Size" value={penSize} min={1} max={MAX_PEN_SIZE} unit="px" onChange={setPenSize} />
+            </div>
             <button
               onClick={() => setPlaying((p) => !p)}
               title={playing ? "Pause (stops live playback on the device)" : "Play (streams frames to the device live)"}
