@@ -79,6 +79,14 @@ fn framework_system_name() -> Option<String> {
     })
 }
 
+/// Whether this is specifically a Framework Laptop 16 — narrower than
+/// [`smbios_manufacturer_is_framework`], for callers that need to gate a
+/// Laptop-16-specific feature (e.g. `matrix_control`'s bay-position
+/// detection, which relies on Laptop 16's specific internal USB wiring).
+pub fn is_framework16() -> bool {
+    smbios_manufacturer_is_framework() && matches!(smbios::get_family(), Some(PlatformFamily::Framework16))
+}
+
 /// Caches a [`System`] across calls so CPU usage can be measured as a
 /// delta between refreshes, per sysinfo's own recommendation.
 #[derive(Default)]
