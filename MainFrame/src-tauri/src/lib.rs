@@ -51,6 +51,7 @@ pub fn run() {
             matrix_control::update_matrix,
             matrix_control::set_matrix_brightness,
             matrix_control::set_matrix_sleep,
+            matrix_control::get_matrix_bay_hint,
             keyboard_mapper::set_keyboard_color,
             keyboard_mapper::set_keyboard_effect,
             keyboard_mapper::set_keyboard_effect_speed,
