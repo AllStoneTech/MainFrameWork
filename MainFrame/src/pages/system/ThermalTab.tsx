@@ -8,6 +8,7 @@ import { useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { Activity } from "lucide-react";
 import { Card } from "../../components/ui/Card";
+import { SimulatedDataNotice } from "../../components/ui/SimulatedDataNotice";
 import { DriverGate } from "./DriverGate";
 import type { SystemHealthContext } from "./SystemHealth";
 
@@ -60,11 +61,18 @@ export default function ThermalTab(): ReactElement {
     setCurve((prev) => prev.map((p, i) => (i === dragIndex ? { ...p, dutyPct } : p)));
   };
 
-  const currentTemp = 42;
-  const currentDuty = curve.reduce((acc, p) => (currentTemp >= p.tempC ? p.dutyPct : acc), curve[0].dutyPct);
+  // Fixed placeholder, not a live reading — see the SimulatedDataNotice
+  // rendered below. Only used to preview where the curve's current duty
+  // point falls; not shown as CPU temp anywhere in the UI.
+  const placeholderTemp = 42;
+  const currentDuty = curve.reduce((acc, p) => (placeholderTemp >= p.tempC ? p.dutyPct : acc), curve[0].dutyPct);
 
   return (
     <Card className="p-6 h-full flex flex-col">
+      <SimulatedDataNotice>
+        This curve isn't wired to the EC yet — dragging points previews the shape only. The temp
+        and RPM readout on the right is a fixed placeholder, not a live reading.
+      </SimulatedDataNotice>
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400">
@@ -72,7 +80,7 @@ export default function ThermalTab(): ReactElement {
           </div>
           <div>
             <h3 className="text-white font-bold">Fan Curve</h3>
-            <div className="text-xs text-gray-400">CPU TEMP: {currentTemp}&deg;C</div>
+            <div className="text-xs text-gray-400">CPU TEMP: {placeholderTemp}&deg;C (placeholder)</div>
           </div>
         </div>
         <div className="text-right">

@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { Thermometer, Fan, Zap } from "lucide-react";
 import { Card } from "../../components/ui/Card";
+import { SimulatedDataNotice } from "../../components/ui/SimulatedDataNotice";
 import { DriverGate } from "./DriverGate";
 import type { SystemHealthContext } from "./SystemHealth";
 
@@ -64,36 +65,42 @@ export default function SensorsTab(): ReactElement {
   if (!ecAvailable) return <DriverGate />;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-      {SENSORS.map((sensor) => {
-        const series = history[sensor.id];
-        const min = Math.min(...series);
-        const max = Math.max(...series) || 1;
-        const points = series
-          .map((v, i) => {
-            const x = (i / (series.length - 1)) * 100;
-            const y = 40 - ((v - min) / (max - min || 1)) * 36 - 2;
-            return `${x},${y}`;
-          })
-          .join(" ");
-        const latest = series[series.length - 1];
+    <div>
+      <SimulatedDataNotice>
+        These readings are <span className="font-medium">simulated</span> — random jitter around a
+        baseline, not real EC telemetry. Don't make cooling or workload decisions based on them.
+      </SimulatedDataNotice>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {SENSORS.map((sensor) => {
+          const series = history[sensor.id];
+          const min = Math.min(...series);
+          const max = Math.max(...series) || 1;
+          const points = series
+            .map((v, i) => {
+              const x = (i / (series.length - 1)) * 100;
+              const y = 40 - ((v - min) / (max - min || 1)) * 36 - 2;
+              return `${x},${y}`;
+            })
+            .join(" ");
+          const latest = series[series.length - 1];
 
-        return (
-          <Card key={sensor.id} className="p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <sensor.icon size={16} style={{ color: sensor.color }} />
-              <span className="text-xs text-gray-400 uppercase tracking-wider">{sensor.label}</span>
-            </div>
-            <div className="text-2xl font-mono text-white mb-2">
-              {latest.toFixed(sensor.id === "fan_rpm" ? 0 : 1)}
-              <span className="text-sm text-gray-400">{sensor.unit}</span>
-            </div>
-            <svg viewBox="0 0 100 40" className="w-full h-10" preserveAspectRatio="none">
-              <polyline points={points} fill="none" stroke={sensor.color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-            </svg>
-          </Card>
-        );
-      })}
+          return (
+            <Card key={sensor.id} className="p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <sensor.icon size={16} style={{ color: sensor.color }} />
+                <span className="text-xs text-gray-400 uppercase tracking-wider">{sensor.label}</span>
+              </div>
+              <div className="text-2xl font-mono text-white mb-2">
+                {latest.toFixed(sensor.id === "fan_rpm" ? 0 : 1)}
+                <span className="text-sm text-gray-400">{sensor.unit}</span>
+              </div>
+              <svg viewBox="0 0 100 40" className="w-full h-10" preserveAspectRatio="none">
+                <polyline points={points} fill="none" stroke={sensor.color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+              </svg>
+            </Card>
+          );
+        })}
+      </div>
     </div>
   );
 }
