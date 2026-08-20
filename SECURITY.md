@@ -40,9 +40,31 @@ permitted. See `security.csp` in
 ### Known unfinished features
 
 - `install_driver` ([`installer.rs`](MainFrame/src-tauri/src/installer.rs))
-  is currently a stub that returns "not implemented" — it does not install
-  or touch any system driver. The corresponding UI button is disabled
-  ("Coming Soon") in [`DriverGate.tsx`](MainFrame/src/pages/system/DriverGate.tsx).
+  is a stub that returns an error — it does not install or touch any
+  system driver, and there is deliberately no UI path to trigger it in
+  [`DriverGate.tsx`](MainFrame/src/pages/system/DriverGate.tsx). This isn't
+  a "not built yet" gap so much as a "won't do this automatically" one: see
+  below.
+
+### Why Windows fan/battery/sensor access stays unimplemented
+
+Real EC access on Windows (fan curves, charge limits, live thermal data)
+needs a kernel driver at `\\.\GLOBALROOT\Device\CrosEC`. The only one that
+exists is the community
+[FrameworkWindowsUtils](https://github.com/DHowett/FrameworkWindowsUtils)
+CrosEC driver — MIT/BSD-style licensed, so redistribution itself isn't the
+problem. What is: its own release notes require enabling Windows
+test-signing mode and disabling Secure Boot to load it, since no WHQL- or
+EV-signed build exists. Disabling Secure Boot in turn makes Windows demand
+the user's BitLocker recovery key on next boot. (Checked directly against
+Framework's own public driver work as of this writing, which covers a
+separate Desktop ARGB driver, not this one.)
+
+That's a real reduction in a user's boot security posture, not a routine
+driver install — MainFrameWork won't automate it or prompt for it on your
+behalf. If you understand the trade-off and want it anyway, `DriverGate.tsx`
+links to the driver project directly rather than the app doing it for you.
+This will be revisited if/when a properly signed build exists.
 
 ## Reporting a vulnerability
 

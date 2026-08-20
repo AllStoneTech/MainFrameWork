@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import type { ReactElement } from "react";
-import { ShieldAlert, Clock } from "lucide-react";
+import { ShieldAlert } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 /**
  * Shared "needs EC driver" gate shown in place of Thermal/Battery/Sensors
@@ -8,9 +9,14 @@ import { ShieldAlert, Clock } from "lucide-react";
  * The Expansion tab does not use this gate — bay occupancy is plain USB
  * enumeration and works without EC access per ARCHITECT.md's Tier 1/2 split.
  *
- * The install button is intentionally disabled: the backend's
- * `install_driver` command (installer.rs) doesn't install anything yet, so
- * there is nothing here to wire up until that's implemented for real.
+ * No install button here, disabled or otherwise: the only driver that could
+ * unlock this (DHowett's community CrosEC driver) isn't signed for normal
+ * use — installing it means enabling Windows test-signing mode and
+ * disabling Secure Boot, which also triggers a BitLocker recovery-key
+ * prompt on next boot. MainFrameWork won't automate or casually prompt for
+ * that trade-off, so this screen states the real reason instead of
+ * implying it's a "coming soon" build-it-eventually gap. See
+ * installer.rs's doc comment and SECURITY.md for the full explanation.
  */
 export function DriverGate(): ReactElement {
   return (
@@ -19,20 +25,28 @@ export function DriverGate(): ReactElement {
         <div className="bg-primary/20 p-6 rounded-full inline-block mb-6">
           <ShieldAlert size={64} className="text-primary" />
         </div>
-        <h2 className="text-2xl font-bold text-white mb-4">Pro Features Locked</h2>
+        <h2 className="text-2xl font-bold text-white mb-4">Fan / Battery / Sensor Access Unavailable</h2>
+        <p className="text-gray-400 mb-4 leading-relaxed">
+          This needs a Windows kernel driver at <span className="text-white font-mono text-sm">CrosEC</span>,
+          which Windows doesn't ship. The only driver that provides it isn't signed for normal use —
+          installing it requires disabling Secure Boot and enabling Windows test-signing mode, which also
+          forces a BitLocker recovery-key prompt on your next boot.
+        </p>
         <p className="text-gray-400 mb-8 leading-relaxed">
-          Direct hardware access (Fans, Battery Limit, Sensors) requires the
-          <span className="text-white font-medium"> CrosEC Kernel Driver</span>.
-          <br />
-          Windows does not expose this by default.
+          MainFrameWork won't do that to your machine automatically, so this isn't wired up. If you
+          understand that trade-off and want to install it yourself anyway, the driver and its
+          installation steps are documented upstream.
         </p>
 
         <button
-          disabled
-          className="bg-gray-700 text-gray-400 font-bold py-3 px-6 rounded-lg flex items-center gap-2 mx-auto cursor-not-allowed"
+          onClick={() =>
+            openUrl("https://github.com/DHowett/FrameworkWindowsUtils").catch((err: unknown) =>
+              console.error("Failed to open link:", err)
+            )
+          }
+          className="text-primary text-sm font-medium hover:underline"
         >
-          <Clock size={20} />
-          Coming Soon
+          View the driver project ↗
         </button>
 
         <p className="mt-6 text-xs text-gray-400">
