@@ -33,15 +33,21 @@ local-only desktop application. It transforms Framework hardware from a
 **1. The "Driver Wall" (Windows EC Access)**
 
 - **Challenge:** accessing the Embedded Controller (EC) on Windows to control
-  Fans and Battery requires a kernel-level driver (`CrosEC.sys`) or disabling
-  Secure Boot. It cannot be done from a purely portable user-mode application.
+  Fans and Battery requires a kernel-level driver. The only one that exists
+  is a community project, unsigned for normal use — loading it means
+  disabling Secure Boot, a real reduction in a user's boot security posture,
+  not a routine install. See
+  [SECURITY.md](../SECURITY.md#why-windows-fanbatterysensor-access-stays-unimplemented)
+  for the full reasoning.
 - **Strategy: "Graceful Degradation"**
   - **Tier 1 (Portable):** The app runs immediately without installation.
     Controls Input (Keyboard, Remapping) and Matrix (Drawing), which use
     standard HID.
-  - **Tier 2 (Pro):** If the user wants Fan/Battery control, the app checks for
-    the driver. If missing, these tabs are disabled with a "Enable Pro Features"
-    button that installs the signed driver.
+  - **Tier 2 (Full EC Access):** Fan/Battery/Sensor tabs explain why they're
+    unavailable on Windows instead of offering to install anything —
+    MainFrameWork won't automate that Secure Boot trade-off on a user's
+    behalf. Linux doesn't have this problem (`/dev/cros_ec` works out of the
+    box); it's simply not implemented yet there.
 
 ---
 
