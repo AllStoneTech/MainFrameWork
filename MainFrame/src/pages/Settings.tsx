@@ -83,6 +83,10 @@ export default function Settings(): ReactElement {
                 All Stone Tech
               </button>
             </div>
+            <div className="text-xs text-gray-500 pt-2 leading-relaxed">
+              Unofficial and independent — not affiliated with, endorsed by, or supported by
+              Framework Computer Inc.
+            </div>
           </div>
         </Card>
       </div>
