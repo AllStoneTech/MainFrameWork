@@ -3,6 +3,14 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)](#)
 
+> **Unofficial.** MainFrameWork is an independent, community-built project
+> from [All Stone Tech](https://www.AllStoneTech.com). It is **not**
+> affiliated with, endorsed by, or supported by Framework Computer Inc. —
+> "Framework" here refers to the hardware this app happens to control, the
+> same way any third-party tool for someone else's hardware would. Use it
+> at your own risk; see [SECURITY.md](SECURITY.md) for the honest posture
+> and known trade-offs.
+
 A unified desktop control panel for Framework hardware: keyboard remapping
 and RGB lighting, LED Matrix drawing/animation, and system health (fans,
 battery, expansion cards) in one lightweight Tauri app, instead of several
