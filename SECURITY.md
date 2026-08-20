@@ -45,6 +45,12 @@ permitted. See `security.csp` in
   [`DriverGate.tsx`](MainFrame/src/pages/system/DriverGate.tsx). This isn't
   a "not built yet" gap so much as a "won't do this automatically" one: see
   below.
+- Real fan/battery/sensor data on Linux
+  ([`ec_control.rs`](MainFrame/src-tauri/src/ec_control.rs)) is implemented
+  and type-checks cleanly, but hasn't been run against real Linux hardware
+  — this project's dev/test machine is Windows-only. Treat it as "written
+  carefully, not yet confirmed" until someone runs it on an actual Linux
+  Framework system.
 
 ### Why Windows fan/battery/sensor access stays unimplemented
 

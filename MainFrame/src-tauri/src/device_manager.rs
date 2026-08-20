@@ -12,6 +12,7 @@
 
 use framework_lib::audio_card::AUDIO_CARD_PID;
 use serde::Serialize;
+use std::sync::Mutex;
 
 const FRAMEWORK_VID: u16 = 0x32AC;
 
@@ -23,6 +24,16 @@ pub struct ConnectedDevice {
     pub pid: u16,
     pub description: String,
     pub device_type: String, // "Keyboard", "Matrix", "Expansion", "Unknown"
+}
+
+/// Remembers the (vid, pid) set from the previous [`scan_devices`] call so
+/// it only logs when that set actually changes, instead of on every poll —
+/// the frontend (`Sidebar.tsx`) calls this every 5 seconds just to keep the
+/// connection pill live, which made the console scroll constantly even when
+/// nothing was happening.
+#[derive(Default)]
+pub struct DeviceScanState {
+    last_signature: Mutex<Option<Vec<(u16, u16)>>>,
 }
 
 // Maps a Framework-VID device's PID to a friendly name/type. Entries below
@@ -56,16 +67,16 @@ fn identify_device(pid: u16) -> (String, String) {
 }
 
 /// Scans the USB bus for connected Framework devices and returns them
-/// classified by PID via [`identify_device`].
+/// classified by PID via [`identify_device`]. Only logs to the console when
+/// the set of connected devices actually changes since the last call — see
+/// [`DeviceScanState`].
 ///
 /// # Errors
 /// Returns an error string if the USB bus itself can't be accessed
 /// (e.g. missing libusb backend); individual device descriptor read
 /// failures are silently skipped rather than failing the whole scan.
 #[tauri::command]
-pub fn scan_devices() -> Result<Vec<ConnectedDevice>, String> {
-    println!("Scanning for Framework Devices (VID: {:04x})...", FRAMEWORK_VID);
-    
+pub fn scan_devices(state: tauri::State<DeviceScanState>) -> Result<Vec<ConnectedDevice>, String> {
     let mut found_devices = Vec::new();
 
     if let Ok(devices) = rusb::devices() {
@@ -73,7 +84,7 @@ pub fn scan_devices() -> Result<Vec<ConnectedDevice>, String> {
             if let Ok(desc) = device.device_descriptor() {
                 if desc.vendor_id() == FRAMEWORK_VID {
                     let (description, device_type) = identify_device(desc.product_id());
-                    
+
                     found_devices.push(ConnectedDevice {
                         vid: desc.vendor_id(),
                         pid: desc.product_id(),
@@ -87,6 +98,19 @@ pub fn scan_devices() -> Result<Vec<ConnectedDevice>, String> {
         return Err("Failed to access USB bus".to_string());
     }
 
-    println!("Found {} devices.", found_devices.len());
+    let mut signature: Vec<(u16, u16)> = found_devices.iter().map(|d| (d.vid, d.pid)).collect();
+    signature.sort_unstable();
+
+    let mut last_signature = state.last_signature.lock().map_err(|e| e.to_string())?;
+    if last_signature.as_ref() != Some(&signature) {
+        println!(
+            "Framework devices changed: {} device(s) now connected (VID {:04x}): {:?}",
+            found_devices.len(),
+            FRAMEWORK_VID,
+            found_devices.iter().map(|d| d.description.as_str()).collect::<Vec<_>>()
+        );
+        *last_signature = Some(signature);
+    }
+
     Ok(found_devices)
 }

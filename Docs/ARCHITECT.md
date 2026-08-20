@@ -51,10 +51,17 @@ GPLv3 source; see Security Posture below for the honest version.)
 
 **C. System Service (EC/Platform)**
 
-- **Linux:** Direct file ops on `/sys/class/power_supply` and `/dev/cros_ec`
-  (present out of the box on Framework hardware's in-kernel driver, no
-  separate install needed) — real, not yet implemented in MainFrameWork
-  itself but not blocked on anything external either.
+- **Linux:** Implemented in `ec_control.rs` via `framework_lib::chromium_ec`
+  talking to `/dev/cros_ec` — present out of the box on Framework
+  hardware's in-kernel driver, no separate install needed, unlike Windows
+  below. Covers battery status, charge limit get/set, temperature sensors,
+  and fan RPM/duty/auto — see that file's doc comment for exactly which
+  parts of `framework_lib`'s public API are used versus reimplemented (temp
+  sensor and fan RPM parsing, since framework_lib 0.6.5 only exposes those
+  as a print-to-stdout helper, not structured data). Type-checks cleanly —
+  the code isn't platform-gated, since `CrosEc` itself is cross-platform —
+  but hasn't run against real Linux hardware yet; this project's dev/test
+  machine is Windows-only.
 - **Windows:**
   1. **Probe:** Attempt to open a handle to `\\.\GLOBALROOT\Device\CrosEC`
      (`ec_check.rs`). Almost always fails, for the reason below.

@@ -4,10 +4,13 @@
 //!
 //! Declares the app's module tree, registers all `#[tauri::command]`
 //! handlers exposed to the frontend via `invoke()`, and wires up managed
-//! state (currently just [`keyboard_mapper::KeyboardHidState`], which
-//! caches the HID handle for the keyboard's RGB matrix across calls).
-//! This is the single place new backend commands must be registered or
-//! the frontend will get an "unknown command" error at runtime.
+//! state: [`keyboard_mapper::KeyboardHidState`] (caches the keyboard's HID
+//! handle across calls), [`system_info::SystemInfoState`] (caches the
+//! `sysinfo::System` needed for delta CPU-usage readings), and
+//! [`device_manager::DeviceScanState`] (remembers the last USB scan result
+//! so it only logs when something actually changes). This is the single
+//! place new backend commands must be registered or the frontend will get
+//! an "unknown command" error at runtime.
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 /// Trivial example command left over from the Tauri template; not used by
@@ -21,6 +24,7 @@ mod device_manager;
 mod matrix_control;
 mod keyboard_mapper;
 mod ec_check;
+mod ec_control;
 mod persistence;
 mod installer;
 mod tray;
@@ -40,6 +44,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(keyboard_mapper::KeyboardHidState::default())
         .manage(system_info::SystemInfoState::default())
+        .manage(device_manager::DeviceScanState::default())
         .setup(|app| {
             tray::setup_tray(app)?;
             Ok(())
@@ -58,6 +63,12 @@ pub fn run() {
             keyboard_mapper::set_keyboard_brightness,
             keyboard_mapper::save_keyboard_lighting,
             ec_check::check_ec_status,
+            ec_control::get_battery_snapshot,
+            ec_control::get_charge_limit,
+            ec_control::set_charge_limit,
+            ec_control::get_thermal_snapshot,
+            ec_control::set_fan_duty,
+            ec_control::set_fan_auto,
             persistence::save_settings,
             persistence::load_settings,
             installer::install_driver

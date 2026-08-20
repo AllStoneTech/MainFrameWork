@@ -47,7 +47,9 @@ local-only desktop application. It transforms Framework hardware from a
     unavailable on Windows instead of offering to install anything —
     MainFrameWork won't automate that Secure Boot trade-off on a user's
     behalf. Linux doesn't have this problem (`/dev/cros_ec` works out of the
-    box); it's simply not implemented yet there.
+    box); real EC access is implemented there, pending a verification pass
+    against actual Linux hardware (see SECURITY.md's "known unfinished
+    features").
 
 ---
 
