@@ -28,9 +28,15 @@
   - **Rust:** Build `DeviceScanner` struct using `rusb` crate.
   - **Poll Loop:** Check for VID `0x32AC` (Framework) every 2s or on USB Event.
   - **React:** Update Dashboard tabs based on `Scanner` state.
-- [ ] **[Core] EC Access**
-  - **Linux:** Implement `File` reader for `/dev/cros_ec` (ioctl).
-  - **Windows:** Integrate `win_ring0` crate or unsafe extern "C" bindings.
+- [x] **[Core] EC Access** — via `framework_lib::chromium_ec`, not a
+  custom ioctl/extern-C implementation as originally planned here.
+  - **Linux:** Implemented in `ec_control.rs` (battery, charge limit,
+    temps, fan RPM/duty/auto) — written and type-checked, but not yet run
+    against real Linux hardware (this project's dev/test machine is
+    Windows-only). Needs that verification pass before calling it done.
+  - **Windows:** Deliberately not implemented — the only available EC
+    driver requires disabling Secure Boot, which this app won't automate.
+    See [SECURITY.md](../SECURITY.md#why-windows-fanbatterysensor-access-stays-unimplemented).
 - [ ] **[UI] Dashboard Widgets**
   - Bind "Refresh" button to `scanner.refresh()`.
   - Build Fan Curve Graph (SVG).

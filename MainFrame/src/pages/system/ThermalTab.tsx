@@ -1,20 +1,25 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 /**
  * Fan curve editor tab (System Health). See the exported component's doc
- * comment below for what is and isn't wired to the EC yet.
+ * comment below for what is and isn't wired to the EC.
  */
 import type { ReactElement } from "react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
+import { invoke } from "@tauri-apps/api/core";
 import { Activity } from "lucide-react";
 import { Card } from "../../components/ui/Card";
-import { SimulatedDataNotice } from "../../components/ui/SimulatedDataNotice";
 import { DriverGate } from "./DriverGate";
 import type { SystemHealthContext } from "./SystemHealth";
 
 interface CurvePoint {
   tempC: number;
   dutyPct: number;
+}
+
+interface ThermalSnapshot {
+  temps_celsius: [string, number][];
+  fans_rpm: [string, number][];
 }
 
 const INITIAL_CURVE: CurvePoint[] = [
@@ -29,6 +34,7 @@ const GRAPH_W = 500;
 const GRAPH_H = 220;
 const TEMP_MIN = 20;
 const TEMP_MAX = 100;
+const POLL_INTERVAL_MS = 2000;
 
 // Map a curve point's domain values (temp in °C, duty in %) onto SVG
 // viewBox pixel coordinates. Duty is inverted (0% -> bottom, 100% -> top)
@@ -38,14 +44,36 @@ const yForDuty = (d: number): number => GRAPH_H - (d / 100) * GRAPH_H;
 
 /**
  * Draggable fan curve editor, modeled on framework-control's curve editor
- * (drag points + live crosshair overlay). Curve points are local state
- * only — no `#[tauri::command]` writes the curve to the EC yet.
+ * (drag points + live crosshair overlay). The curve shape is local state
+ * only, dragging never touches the EC by itself — but the header's temp
+ * and RPM readout is now real (polled `get_thermal_snapshot` every 2s via
+ * ec_control.rs), and "Apply Curve Now" sends the duty the curve currently
+ * implies at the hottest reported sensor via `set_fan_duty`. There's no
+ * background loop that continuously re-applies the curve as temperature
+ * changes — that's a real control loop with its own safety questions
+ * (what happens if MainFrameWork crashes mid-curve, EC comms hiccup, etc.)
+ * deliberately left for a later pass rather than shipped in this one.
+ * "Auto" hands control back to the EC's own fan logic via `set_fan_auto`.
  */
 export default function ThermalTab(): ReactElement {
   const { ecAvailable } = useOutletContext<SystemHealthContext>();
   const [curve, setCurve] = useState<CurvePoint[]>(INITIAL_CURVE);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [snapshot, setSnapshot] = useState<ThermalSnapshot | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+
+  useEffect(() => {
+    if (!ecAvailable) return;
+    const poll = (): void => {
+      invoke<ThermalSnapshot>("get_thermal_snapshot")
+        .then(setSnapshot)
+        .catch((err) => console.error("Failed to read thermal snapshot:", err));
+    };
+    poll();
+    const interval = window.setInterval(poll, POLL_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [ecAvailable]);
 
   if (!ecAvailable) return <DriverGate />;
 
@@ -61,31 +89,52 @@ export default function ThermalTab(): ReactElement {
     setCurve((prev) => prev.map((p, i) => (i === dragIndex ? { ...p, dutyPct } : p)));
   };
 
-  // Fixed placeholder, not a live reading — see the SimulatedDataNotice
-  // rendered below. Only used to preview where the curve's current duty
-  // point falls; not shown as CPU temp anywhere in the UI.
-  const placeholderTemp = 42;
-  const currentDuty = curve.reduce((acc, p) => (placeholderTemp >= p.tempC ? p.dutyPct : acc), curve[0].dutyPct);
+  const temps = snapshot?.temps_celsius.map(([, c]) => c) ?? [];
+  const hottestTemp = temps.length > 0 ? Math.max(...temps) : null;
+  const firstFanRpm = snapshot?.fans_rpm[0]?.[1] ?? null;
+  const currentDuty =
+    hottestTemp === null ? null : curve.reduce((acc, p) => (hottestTemp >= p.tempC ? p.dutyPct : acc), curve[0].dutyPct);
+
+  const applyCurve = async (): Promise<void> => {
+    if (currentDuty === null) return;
+    setStatus("Applying...");
+    try {
+      await invoke("set_fan_duty", { fan: null, percent: currentDuty });
+      setStatus(`Applied ${currentDuty}% duty`);
+      setTimeout(() => setStatus(null), 2000);
+    } catch (err) {
+      setStatus(`Error: ${err}`);
+    }
+  };
+
+  const setAuto = async (): Promise<void> => {
+    setStatus("Setting auto...");
+    try {
+      await invoke("set_fan_auto", { fan: null });
+      setStatus("EC auto control restored");
+      setTimeout(() => setStatus(null), 2000);
+    } catch (err) {
+      setStatus(`Error: ${err}`);
+    }
+  };
 
   return (
     <Card className="p-6 h-full flex flex-col">
-      <SimulatedDataNotice>
-        This curve isn't wired to the EC yet — dragging points previews the shape only. The temp
-        and RPM readout on the right is a fixed placeholder, not a live reading.
-      </SimulatedDataNotice>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400">
             <Activity size={20} />
           </div>
           <div>
             <h3 className="text-white font-bold">Fan Curve</h3>
-            <div className="text-xs text-gray-400">CPU TEMP: {placeholderTemp}&deg;C (placeholder)</div>
+            <div className="text-xs text-gray-400">
+              HOTTEST SENSOR: {hottestTemp === null ? "reading..." : `${hottestTemp}°C`}
+            </div>
           </div>
         </div>
         <div className="text-right">
-          <span className="text-blue-400 font-mono text-xl block">{Math.round(currentDuty * 34)}</span>
-          <span className="text-xs text-gray-400">RPM (est.)</span>
+          <span className="text-blue-400 font-mono text-xl block">{firstFanRpm ?? "—"}</span>
+          <span className="text-xs text-gray-400">RPM (live)</span>
         </div>
       </div>
 
@@ -129,7 +178,26 @@ export default function ThermalTab(): ReactElement {
         <div className="absolute bottom-2 left-4 text-[10px] text-gray-400 font-mono">{TEMP_MIN}&deg;C</div>
         <div className="absolute bottom-2 right-4 text-[10px] text-gray-400 font-mono">{TEMP_MAX}&deg;C</div>
       </div>
-      <p className="text-xs text-gray-400 mt-3">Drag points vertically to adjust fan duty at each temperature step.</p>
+
+      <div className="flex items-center justify-between mt-3 flex-wrap gap-2">
+        <p className="text-xs text-gray-400">Drag points vertically to adjust fan duty at each temperature step.</p>
+        <div className="flex items-center gap-2">
+          {status && <span className="text-xs text-gray-400">{status}</span>}
+          <button
+            onClick={setAuto}
+            className="px-3 py-1.5 rounded-lg bg-black/20 border border-white/10 text-gray-400 hover:text-white text-xs font-medium"
+          >
+            Auto
+          </button>
+          <button
+            onClick={applyCurve}
+            disabled={currentDuty === null}
+            className="px-3 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-400 hover:bg-blue-500/20 text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Apply Curve Now ({currentDuty ?? "—"}%)
+          </button>
+        </div>
+      </div>
     </Card>
   );
 }
