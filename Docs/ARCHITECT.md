@@ -51,13 +51,27 @@ GPLv3 source; see Security Posture below for the honest version.)
 
 **C. System Service (EC/Platform)**
 
-- **Linux:** Direct file ops on `/sys/class/power_supply` and `/dev/cros_ec`.
-- **Windows (Hybrid Strategy):**
-  1. **Probe:** Attempt to open handle to `\\.\CrosEC`.
-  2. **Fallback:** If failed, return `FeatureNotAvailable`. UI grays out
-     "Thermal" and "Battery" tabs.
-  3. **Install:** Provide embedded installer for `CrosEC.sys` (requires Admin).
-  4. **Success:** Load driver and proxy EC instruction via IOCTLs.
+- **Linux:** Direct file ops on `/sys/class/power_supply` and `/dev/cros_ec`
+  (present out of the box on Framework hardware's in-kernel driver, no
+  separate install needed) — real, not yet implemented in MainFrameWork
+  itself but not blocked on anything external either.
+- **Windows:**
+  1. **Probe:** Attempt to open a handle to `\\.\GLOBALROOT\Device\CrosEC`
+     (`ec_check.rs`). Almost always fails, for the reason below.
+  2. **Fallback:** UI shows `DriverGate` in place of Thermal/Battery/Sensors
+     content, explaining why rather than implying "coming soon."
+  3. **No install step exists, deliberately.** The only driver that exposes
+     that device path is the community
+     [FrameworkWindowsUtils](https://github.com/DHowett/FrameworkWindowsUtils)
+     CrosEC driver (MIT/BSD-licensed — redistribution itself isn't the
+     issue). Its own release notes require enabling Windows test-signing
+     mode and disabling Secure Boot to load it, since no WHQL- or EV-signed
+     build exists (checked directly; Framework's own signed-driver work as
+     of this writing covers a separate Desktop ARGB driver, not this one).
+     Disabling Secure Boot also forces a BitLocker recovery-key prompt on
+     next boot. `installer.rs`'s `install_driver` stays an intentional stub
+     rather than automating or prompting for that trade-off — see its doc
+     comment and [SECURITY.md](../SECURITY.md) for the full reasoning.
 
 **D. Tray & Window Lifecycle (`tray.rs`)**
 

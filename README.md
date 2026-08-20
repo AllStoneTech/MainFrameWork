@@ -45,8 +45,13 @@ Built as UI, not yet wired to hardware:
 - **Widget library** (Matrix Studio) — layout composer for clock/battery/CPU
   widgets; doesn't push a live render to the matrix yet.
 - **System Health** (Thermal, Battery, Sensors) — fan curves, charge
-  limiting, and sensor readouts are UI-complete but not wired to the EC yet;
-  sensor values shown today are simulated.
+  limiting, and sensor readouts are UI-complete but not wired to the EC yet
+  (values shown today are simulated, clearly labeled as such in the UI).
+  On Linux this is a matter of implementation time — `/dev/cros_ec` is
+  available out of the box. On Windows it's currently blocked, not just
+  unbuilt: the only available driver isn't signed for normal use and
+  requires disabling Secure Boot to load, so this app won't install it
+  automatically — see [SECURITY.md](SECURITY.md#why-windows-fanbatterysensor-access-stays-unimplemented).
 
 See [Docs/releasePlan.md](Docs/releasePlan.md) for feature-by-feature build
 status, [Docs/CONCEPT.md](Docs/CONCEPT.md) for the product vision, and
