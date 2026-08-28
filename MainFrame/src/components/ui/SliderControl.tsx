@@ -9,6 +9,7 @@ interface SliderControlProps {
   step?: number;
   unit?: string;
   accentClassName?: string;
+  disabled?: boolean;
   onChange: (value: number) => void;
 }
 
@@ -25,6 +26,7 @@ export function SliderControl({
   step = 1,
   unit = "",
   accentClassName = "accent-primary",
+  disabled = false,
   onChange,
 }: SliderControlProps): ReactElement {
   return (
@@ -42,8 +44,9 @@ export function SliderControl({
         max={max}
         step={step}
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(Number(e.target.value))}
-        className={`w-full h-3 rounded-full appearance-none cursor-pointer border border-white/5 bg-[#111] hover:border-primary/30 transition-colors ${accentClassName}`}
+        className={`w-full h-3 rounded-full appearance-none cursor-pointer border border-white/5 bg-[#111] hover:border-primary/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${accentClassName}`}
       />
     </div>
   );

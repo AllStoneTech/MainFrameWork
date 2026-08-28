@@ -1,8 +1,26 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 /**
- * Frame-by-frame animation editor tab (Matrix Studio). See the exported
- * component's doc comment below for how Play/Upload relate to the real
- * device protocol and what's deliberately not implemented yet.
+ * Combined Canvas+Animator editor (Matrix Studio) — the primary tab
+ * once Canvas and Animator were hidden from the tab bar in favor of
+ * this one (see MatrixStudio.tsx; their routes/components still exist
+ * and work, just aren't linked from the nav, in case this needs to be
+ * reverted).
+ *
+ * A single canvas is really just a 1-frame animation, so this reuses
+ * AnimatorTab's exact state model and editing logic (frame-array
+ * `useHistory`, brush/stamp gesture-collapsing, Play loop, Add/Delete/
+ * Clear Frame, marquee generation) plus CanvasTab's Pattern presets and
+ * Brightness control, wired to the *same* persisted data AnimatorTab
+ * uses (`SETTINGS_KEY`/`SAVED_ARRANGEMENTS_KEY`/`SCHEDULE_KEY`, exported
+ * from AnimatorTab.tsx) — editing here shows up in Animator and vice
+ * versa, so nothing needs migrating if Animator is ever fully removed.
+ *
+ * This intentionally duplicates a fair amount of AnimatorTab.tsx's
+ * component logic rather than factoring a shared hook: this editor's
+ * shape kept changing across several rounds of feedback, and
+ * abstracting too early would have meant repeatedly reworking a shared
+ * hook instead of just the one component. Worth a real cleanup/dedup
+ * pass once the shape settles and Canvas/Animator are actually deleted.
  */
 import type { ReactElement } from "react";
 import { useEffect, useRef, useState } from "react";
@@ -11,6 +29,7 @@ import { useOutletContext } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { Eraser, Play, Pause, Plus, Redo2, Trash2, Undo2, Upload, Wand2 } from "lucide-react";
 import { Card } from "../../components/ui/Card";
+import { PatternPicker } from "../../components/ui/PatternPicker";
 import { PixelGrid } from "../../components/ui/PixelGrid";
 import { SavedArrangements } from "../../components/ui/SavedArrangements";
 import { Schedule } from "../../components/ui/Schedule";
@@ -18,10 +37,13 @@ import { SliderControl } from "../../components/ui/SliderControl";
 import { StampPalette } from "../../components/ui/StampPalette";
 import { ToolModeToggle, type ToolMode } from "../../components/ui/ToolModeToggle";
 import { useHistory, useUndoRedoShortcuts } from "../../lib/history";
+import { applyBuiltinPattern, BUILTIN_PATTERNS, previewBuiltinPattern } from "../../lib/matrixPatterns";
 import { useBrushPaint } from "../../lib/pixelBrush";
 import { useStampPlace, type StampGlyph } from "../../lib/stampPlace";
 import { generateMarqueeFrames } from "../../lib/marqueeAnimator";
 import { loadSettings, patchSettings } from "../../lib/settings";
+import { generatePattern, type PatternId } from "./CanvasTab";
+import { SETTINGS_KEY, SAVED_ARRANGEMENTS_KEY, SCHEDULE_KEY } from "./AnimatorTab";
 import type { MatrixStudioContext } from "./MatrixStudio";
 
 const WIDTH = 9;
@@ -31,67 +53,33 @@ const MIN_FRAME_INTERVAL_MS = 50;
 const MAX_FRAME_INTERVAL_MS = 1000;
 const MAX_PEN_SIZE = 5;
 const MAX_MARQUEE_SPEED = 4;
-// Exported so EditorTab.tsx (the combined Canvas+Animator editor) can
-// read/write the exact same persisted data — a single canvas is just a
-// 1-frame animation, so the two tabs are meant to be two views over one
-// live dataset, not separate copies.
-export const SETTINGS_KEY = "matrix_animator_frames";
-export const SAVED_ARRANGEMENTS_KEY = "matrix_animator_saved_arrangements";
-export const SCHEDULE_KEY = "matrix_animator_schedule";
+// Coalesces rapid-fire slider drags into one device write instead of one
+// per drag tick — Brightness has no debounce of its own otherwise, and
+// each write opens a fresh, uncached serial connection (see
+// matrix_control.rs's `port_for_panel` doc comment), so a burst of them
+// collide/queue on the same port and updates lag or get silently dropped.
+const BRIGHTNESS_DEBOUNCE_MS = 80;
 const BLANK_FRAME = (): number[] => new Array(WIDTH * HEIGHT).fill(0);
 
-/**
- * Frame-by-frame animation editor for the LED Matrix. Frames persist to
- * the same encrypted settings blob LightingTab uses. Both "Upload to
- * Matrix" and Play push frames to the real device via the same
- * `update_matrix` command CanvasTab uses — Play just calls it on every
- * frame tick instead of once. This streams frames live from the host
- * rather than storing the sequence on-device via the module's ANIMATE_CMD
- * (see ANIMATE_CMD in FrameworkComputer/dotmatrixtool @ 4154b14, app.js:
- * https://github.com/FrameworkComputer/dotmatrixtool/blob/4154b149ba962305af2b72a51ba419e244796f18/app.js)
- * — that would let the panel animate without MainFrameWork running, but
- * needs its own protocol verification pass against real hardware before
- * relying on it.
- *
- * Drawing on the active frame uses the same click-to-toggle,
- * drag-to-paint `useBrushPaint` model as CanvasTab — no separate
- * Pen/Eraser tool, same shared Pen Size control. A Brush/Stamp tool mode
- * (see ToolModeToggle) additionally lets a single frame be built by
- * placing whole symbols via `useStampPlace`, shared with CanvasTab.
- *
- * The "Generate Marquee Text" panel is a separate, higher-level way to fill
- * `frames` entirely: generateMarqueeFrames (marqueeAnimator.ts) turns a
- * typed string directly into a frame sequence — a static centered frame
- * if it already fits the panel, otherwise a scrolling sequence — and
- * replaces the whole `frames` array in one action rather than requiring
- * every frame to be hand-drawn.
- *
- * `frames` is undo/redo-able via `useHistory` (history.ts): a brush
- * stroke or stamp placement on the active frame, Add/Delete Frame,
- * Clear, and marquee Generate are each one undo step. `activeFrame`
- * (which frame you're *viewing*) deliberately isn't part of that
- * history — undo restores frame content/count, not your scroll
- * position.
- *
- * Tool mode, undo/redo, Pen Size, and Saved render into `toolbarSlot`
- * (see MatrixStudioContext) via a portal, so they sit on the same row
- * as the Canvas/Widgets/Animator tab pills rather than a row of their
- * own here.
- */
-export default function AnimatorTab(): ReactElement {
+const CUSTOM_PATTERNS: { id: PatternId; label: string }[] = [
+  { id: "blank", label: "Blank" },
+  { id: "full", label: "Full" },
+  { id: "checkerboard", label: "Checkerboard" },
+  { id: "every2row", label: "Every 2nd Row" },
+  { id: "every3row", label: "Every 3rd Row" },
+  { id: "every2col", label: "Every 2nd Col" },
+  { id: "every3col", label: "Every 3rd Col" },
+];
+
+export default function EditorTab(): ReactElement {
   const { panel, toolbarSlot } = useOutletContext<MatrixStudioContext>();
   const framesHistory = useHistory<number[][]>([BLANK_FRAME()]);
   const frames = framesHistory.present;
-  // activeFrame isn't part of the undo history (see the doc comment
-  // above), so undo/redo, loading a saved arrangement, or a marquee
-  // Generate can all shrink frames.length out from under it. Deriving
-  // the clamped value at render time (rather than correcting it in an
-  // effect afterward) matters: an out-of-bounds index would make
-  // frames[activeFrame] undefined *during* that same render, crashing
-  // PixelGrid before any effect gets a chance to run.
   const [activeFrameIndex, setActiveFrame] = useState(0);
   const activeFrame = Math.min(activeFrameIndex, frames.length - 1);
   const [penSize, setPenSize] = useState(1);
+  const [brightness, setBrightness] = useState(255);
+  const [brightnessLoading, setBrightnessLoading] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [playbackInterval, setPlaybackInterval] = useState(DEFAULT_FRAME_INTERVAL_MS);
   const [status, setStatus] = useState("");
@@ -99,15 +87,15 @@ export default function AnimatorTab(): ReactElement {
   const [activeStamp, setActiveStamp] = useState<StampGlyph | null>(null);
   const [marqueeText, setMarqueeText] = useState("");
   const [marqueeSpeed, setMarqueeSpeed] = useState(1);
+  const [selectedPatternLabel, setSelectedPatternLabel] = useState("Pattern...");
   const intervalRef = useRef<number | null>(null);
+  const brightnessTimeoutRef = useRef<number | null>(null);
   const loaded = useRef(false);
 
   useEffect(() => {
     loadSettings().then((settings) => {
       const saved = settings[SETTINGS_KEY] as number[][] | undefined;
       if (saved && saved.length > 0) {
-        // reset, not commit: hydrating from disk on mount shouldn't
-        // create a spurious first undo step back to a blank frame.
         framesHistory.reset(saved);
       }
       loaded.current = true;
@@ -116,12 +104,35 @@ export default function AnimatorTab(): ReactElement {
 
   useEffect(() => {
     if (!loaded.current) return;
-    patchSettings({ [SETTINGS_KEY]: frames }).catch((err) => console.error("Failed to save animator frames:", err));
+    patchSettings({ [SETTINGS_KEY]: frames }).catch((err) => console.error("Failed to save frames:", err));
   }, [frames]);
 
-  // While playing, each tick both advances the preview and pushes the new
-  // frame to the real device — so Play doubles as live on-device playback,
-  // not just a local animation preview.
+  useEffect(() => {
+    return () => {
+      if (brightnessTimeoutRef.current) window.clearTimeout(brightnessTimeoutRef.current);
+    };
+  }, []);
+
+  // Initializes the Brightness slider from the device's actual current
+  // value rather than a hardcoded guess — re-queried on every panel
+  // switch, since Panel 1/Panel 2 have independent brightness. Disabled
+  // for the duration of the query (rather than left showing the outgoing
+  // panel's value, which used to look like it hadn't switched at all —
+  // same reasoning as Sleep/Wake clearing to null in MatrixStudio.tsx)
+  // and silently left at its previous value if nothing's connected.
+  useEffect(() => {
+    setBrightnessLoading(true);
+    invoke<number>("get_matrix_brightness", { panel })
+      .then((value) => {
+        setBrightness(value);
+        setBrightnessLoading(false);
+      })
+      .catch((err) => {
+        console.error("Brightness query failed:", err);
+        setBrightnessLoading(false);
+      });
+  }, [panel]);
+
   useEffect(() => {
     if (playing && frames.length > 1) {
       intervalRef.current = window.setInterval(() => {
@@ -139,11 +150,6 @@ export default function AnimatorTab(): ReactElement {
     };
   }, [playing, frames, panel, playbackInterval]);
 
-  // True at the start of a gesture (pointerDown) — the first paint call
-  // commits a new undo step (on the whole `frames` array, not just this
-  // frame's pixels, so undo restores frame count/content coherently);
-  // every subsequent call in the same gesture applies silently so a
-  // whole stroke/placement is one step. Reset on pointer release.
   const isGestureStartRef = useRef(true);
   const paintActiveFrame = (updater: (prev: number[]) => number[]): void => {
     const framesUpdater = (prevFrames: number[][]): number[][] => {
@@ -163,9 +169,6 @@ export default function AnimatorTab(): ReactElement {
   const stamp = useStampPlace(paintActiveFrame, WIDTH, HEIGHT, activeStamp);
   const active = toolMode === "stamp" ? stamp : brush;
 
-  // Mirrors CanvasTab's stopInteraction: whichever tool isn't active
-  // still gets its interaction state cleared on every pointer release, so
-  // switching tools mid-gesture can't leave stale drag/hover state.
   const stopInteraction = (): void => {
     brush.stopDrawing();
     stamp.onPixelLeaveGrid();
@@ -173,6 +176,52 @@ export default function AnimatorTab(): ReactElement {
   };
 
   useUndoRedoShortcuts(framesHistory.undo, framesHistory.redo);
+
+  const setActiveFrameData = (data: number[]): void => {
+    framesHistory.commit((prev) => {
+      const next = [...prev];
+      next[activeFrame] = data;
+      return next;
+    });
+  };
+
+  // Picking a pattern — custom or built-in — updates the device
+  // immediately rather than requiring a separate manual Upload click;
+  // committing to `framesHistory` still records it as one undo step.
+  // Stops Play first: Play's own interval is already streaming frames
+  // to the device on its own schedule, so a concurrent pattern upload
+  // would race it over the same unpooled serial connection (see
+  // `port_for_panel`'s doc comment) — same reasoning as why "Upload to
+  // Matrix" is disabled while Play is active.
+  const handleSelectCustomPattern = (id: string): void => {
+    const def = CUSTOM_PATTERNS.find((p) => p.id === id);
+    const data = generatePattern(id as PatternId);
+    setPlaying(false);
+    setActiveFrameData(data);
+    setSelectedPatternLabel(def?.label ?? "Pattern...");
+    uploadFrameToDevice(data);
+  };
+
+  // Built-in patterns are a direct device command (see matrixPatterns.ts)
+  // — the firmware renders these itself and never reports pixels back,
+  // so `previewBuiltinPattern` only ever approximates what's now
+  // actually on the panel, purely so the grid doesn't look stale.
+  const handleSelectBuiltinPattern = (id: number, animate: boolean): void => {
+    const def = BUILTIN_PATTERNS.find((p) => p.id === id);
+    setSelectedPatternLabel(`${def?.label ?? "Pattern"} (${animate ? "Animated" : "Static"})`);
+    setPlaying(false);
+    setActiveFrameData(previewBuiltinPattern(id));
+    setStatus("Sending pattern...");
+    applyBuiltinPattern(panel, id, animate)
+      .then(() => {
+        setStatus("Pattern sent");
+        setTimeout(() => setStatus(""), 2000);
+      })
+      .catch((error) => {
+        console.error(error);
+        setStatus(`Error: ${error}`);
+      });
+  };
 
   const addFrame = (): void => {
     framesHistory.commit((prev) => [...prev, BLANK_FRAME()]);
@@ -185,8 +234,6 @@ export default function AnimatorTab(): ReactElement {
     setActiveFrame((prev) => Math.max(0, prev >= index ? prev - 1 : prev));
   };
 
-  // Per confirmed scope: Clear (in the Stamp palette) blanks only the
-  // active frame — other frames and the frame count are untouched.
   const clearActiveFrame = (): void => {
     framesHistory.commit((prev) => {
       const next = [...prev];
@@ -195,8 +242,8 @@ export default function AnimatorTab(): ReactElement {
     });
   };
 
-  // Distinct from clearActiveFrame: this resets the whole sequence back
-  // to a single blank frame, not just the one you're looking at.
+  // Distinct from clearActiveFrame: resets the whole sequence back to a
+  // single blank frame, not just the one you're looking at.
   const clearAllFrames = (): void => {
     framesHistory.commit(() => [BLANK_FRAME()]);
     setActiveFrame(0);
@@ -213,7 +260,6 @@ export default function AnimatorTab(): ReactElement {
       setStatus(`Error: ${error}`);
     }
   };
-
   // Stops Play first rather than being disabled while playing — Play's
   // interval is already streaming frames to the device on its own
   // schedule, so an upload needs that stopped first to avoid two writers
@@ -225,10 +271,21 @@ export default function AnimatorTab(): ReactElement {
     return uploadFrameToDevice(frames[activeFrame]);
   };
 
-  // Replaces the whole frame sequence with a generated marquee and starts
-  // playback immediately, so typing a message and clicking Generate is
-  // enough to see it animate without a separate Play step. Routed
-  // through history.commit, so an unwanted generation is itself undoable.
+  // Updates the slider instantly on every drag tick, but debounces the
+  // actual device write — the range input fires onChange continuously
+  // while dragging, and each write opens a fresh serial connection (see
+  // BRIGHTNESS_DEBOUNCE_MS above), so writing on every tick either
+  // floods the port or lags noticeably behind the slider.
+  const handleBrightnessChange = (value: number): void => {
+    setBrightness(value);
+    if (brightnessTimeoutRef.current) window.clearTimeout(brightnessTimeoutRef.current);
+    brightnessTimeoutRef.current = window.setTimeout(() => {
+      invoke("set_matrix_brightness", { panel, brightness: value }).catch((error) => {
+        console.error("Brightness update failed:", error);
+      });
+    }, BRIGHTNESS_DEBOUNCE_MS);
+  };
+
   const handleGenerateMarquee = (): void => {
     if (!marqueeText.trim()) return;
     const generated = generateMarqueeFrames(marqueeText, { panelWidth: WIDTH, panelHeight: HEIGHT, stepRows: marqueeSpeed });
@@ -237,10 +294,6 @@ export default function AnimatorTab(): ReactElement {
     setPlaying(generated.length > 1);
   };
 
-  // A scheduled entry loads its snapshotted frames and starts playing
-  // immediately — same "load and go" shape as handleGenerateMarquee,
-  // since the point of scheduling is to actually show it, not just
-  // stage it for a manual Play click.
   const handleScheduleFire = (data: number[][]): void => {
     framesHistory.commit(() => data);
     setActiveFrame(0);
@@ -248,14 +301,16 @@ export default function AnimatorTab(): ReactElement {
   };
 
   return (
-    <div
-      className="h-full flex flex-col gap-4"
-      onPointerUp={stopInteraction}
-      onPointerLeave={stopInteraction}
-    >
+    <div className="h-full flex flex-col gap-4" onPointerUp={stopInteraction} onPointerLeave={stopInteraction}>
       {toolbarSlot &&
         createPortal(
           <>
+            <PatternPicker
+              customPatterns={CUSTOM_PATTERNS}
+              selectedLabel={selectedPatternLabel}
+              onSelectCustom={handleSelectCustomPattern}
+              onSelectBuiltin={handleSelectBuiltinPattern}
+            />
             <ToolModeToggle mode={toolMode} onChange={setToolMode} />
             <div className="flex gap-1">
               <button
@@ -280,6 +335,16 @@ export default function AnimatorTab(): ReactElement {
                 <SliderControl label="Pen Size" value={penSize} min={1} max={MAX_PEN_SIZE} unit="px" onChange={setPenSize} />
               </div>
             )}
+            <div className="w-36">
+              <SliderControl
+                label="Brightness"
+                value={brightness}
+                min={0}
+                max={255}
+                disabled={brightnessLoading}
+                onChange={handleBrightnessChange}
+              />
+            </div>
             <SavedArrangements
               settingsKey={SAVED_ARRANGEMENTS_KEY}
               currentData={frames}
@@ -303,15 +368,6 @@ export default function AnimatorTab(): ReactElement {
           toolbarSlot
         )}
 
-      {/* Grid, stamp palette (when active), and the marquee generator as
-          separate sibling panels sharing one row, not one shared scroll
-          window. The grid box is a small fixed pixel size, so its Card
-          is kept narrow (w-96) rather than eating the whole row; the
-          right column gets whatever's left (flex-1) and stacks the
-          palette above the marquee generator, matching the palette's
-          width instead of a full-width strip below — which also means
-          this whole row (and so the grid) gets whatever vertical room
-          that strip used to take. */}
       <div className="flex-1 flex gap-4 min-h-0">
         <Card className="w-96 shrink-0 overflow-auto p-6 min-h-0 flex items-start justify-center">
           <div className="bg-black/80 backdrop-blur rounded-xl border border-gray-800 p-6 shadow-2xl w-fit">
@@ -327,26 +383,18 @@ export default function AnimatorTab(): ReactElement {
             />
           </div>
         </Card>
+        {/* Marquee generator first, Stamp palette below it when active —
+            same column width throughout regardless of which is showing. */}
         <div className="flex-1 flex flex-col gap-4 min-h-0">
-          {toolMode === "stamp" && (
-            <Card className="flex-1 overflow-y-auto p-4 min-h-0">
-              <StampPalette
-                panelWidth={WIDTH}
-                activeStamp={activeStamp}
-                onChangeStamp={setActiveStamp}
-                onClear={clearActiveFrame}
-                clearLabel="Clear current frame"
-              />
-            </Card>
-          )}
-          <Card className="p-4 shrink-0">
-            <h3 className="text-sm font-bold text-white mb-3">Generate Marquee Text</h3>
+          <Card className="p-3 shrink-0">
+            <h3 className="text-sm font-bold text-white mb-2">Generate Marquee Text</h3>
             <div className="flex items-center gap-3 flex-wrap">
               <input
                 type="text"
                 value={marqueeText}
                 onChange={(e) => setMarqueeText(e.target.value)}
                 placeholder="Type a message..."
+                title="Replaces the current frame sequence — text that fits the panel becomes one still frame, longer text scrolls."
                 style={{ colorScheme: "dark" }}
                 className="flex-1 min-w-[160px] px-3 py-2 bg-black/20 border border-white/10 rounded-lg text-sm text-gray-200"
               />
@@ -369,14 +417,22 @@ export default function AnimatorTab(): ReactElement {
                 <Wand2 size={16} /> Generate
               </button>
             </div>
-            <p className="text-xs text-gray-500 mt-2">
-              Replaces the current frame sequence — text that fits the panel becomes one still frame, longer text scrolls.
-            </p>
           </Card>
+          {toolMode === "stamp" && (
+            <Card className="flex-1 overflow-y-auto p-4 min-h-0">
+              <StampPalette
+                panelWidth={WIDTH}
+                activeStamp={activeStamp}
+                onChangeStamp={setActiveStamp}
+                onClear={clearActiveFrame}
+                clearLabel="Clear current frame"
+              />
+            </Card>
+          )}
         </div>
       </div>
 
-      {status && status !== "Uploading..." && status !== "Success" && (
+      {status && status !== "Uploading..." && status !== "Success" && status !== "Sending pattern..." && status !== "Pattern sent" && (
         <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-500 rounded-lg text-sm">{status}</div>
       )}
 
@@ -428,9 +484,6 @@ export default function AnimatorTab(): ReactElement {
           </div>
         </div>
 
-        {/* Always shown, kept small — a full row of every frame reads
-            better here than hiding frames behind a scrubber, as long as
-            each thumbnail stays compact. */}
         <div className="flex gap-1.5 overflow-x-auto pb-1">
           {frames.map((frame, i) => (
             <div

@@ -14,16 +14,32 @@ import type { ConnectedDevice } from "../../lib/types";
 /** Which of the two independent 9x34 LED Matrix boards is targeted. */
 export type Panel = "Panel 1" | "Panel 2";
 
-/** Outlet context passed down to Canvas/Widgets/Animator tabs. */
+/**
+ * Outlet context passed down to Canvas/Widgets/Animator/Editor tabs.
+ * `toolbarSlot` is an empty DOM node rendered next to the TabBar pills;
+ * a tab with its own toolbar (tool mode, undo/redo, Pen Size,
+ * Brightness, Saved, Schedule) portals those controls into it via
+ * `createPortal` so they render on the TabBar's row without lifting
+ * that tab's state up into this shell. Null until the ref callback
+ * below has fired, and simply left unused by tabs (like Widgets) that
+ * have no toolbar.
+ */
 export interface MatrixStudioContext {
   panel: Panel;
+  toolbarSlot: HTMLDivElement | null;
 }
 
 /**
  * Shell for the Matrix Studio pillar. Holds the panel switcher (the LED
  * Matrix module is two independent 9x34 boards, each its own serial port
- * per matrix_control.rs) and the Canvas/Widgets/Animator tab bar; tab
- * content renders through the nested route Outlet.
+ * per matrix_control.rs) and the tab bar; tab content renders through
+ * the nested route Outlet.
+ *
+ * The tab bar only lists Widgets and Editor — Canvas and Animator were
+ * folded into EditorTab.tsx (see its doc comment) and hidden from here,
+ * but their routes stay registered in App.tsx and their components are
+ * untouched, so nothing is actually lost if that turns out to be the
+ * wrong call; they're just not linked from the nav anymore.
  *
  * Deliberately labeled "Panel 1"/"Panel 2", not "Left"/"Right": there's no
  * way to query which physical bay a given serial port belongs to, so
@@ -45,15 +61,22 @@ export interface MatrixStudioContext {
  * shows it as a caption under the switcher — see that command's doc
  * comment in matrix_control.rs for what it can and can't tell us.
  *
- * Sleep/Wake live here rather than in CanvasTab/AnimatorTab so they're
- * available from both — panel power state isn't specific to which editor
- * you're in. `sleepState` is optimistic (set from what we just sent, not
- * read back from the device) and resets to unknown whenever the selected
- * panel changes, since a freshly-selected panel's actual state is
- * unknown until you interact with it.
+ * Sleep/Wake live here rather than in a tab so they're available
+ * regardless of which one you're in — panel power state isn't specific
+ * to an editor. `sleepState` is queried from the real device (`GetSleep`,
+ * `get_matrix_sleep`) on mount and on every panel switch (cleared to
+ * `null` the instant the switch happens, rather than left showing the
+ * outgoing panel's state until the new query resolves), rather than
+ * just assuming "awake" — sleep persists on-device across app restarts
+ * (see matrix_control.rs's module doc comment), so that assumption was
+ * wrong whenever MainFrameWork started up with a panel already asleep.
+ * `handleSleep` itself *is* genuinely optimistic (updates the button
+ * immediately, rolls back on failure) — it wasn't before, despite an
+ * earlier version of this comment claiming so.
  */
 export default function MatrixStudio(): ReactElement {
   const [panel, setPanel] = useState<Panel>("Panel 1");
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
   const [panelCount, setPanelCount] = useState<number | null>(null);
   const [bayHint, setBayHint] = useState<string | null>(null);
   const [sleepState, setSleepState] = useState<"asleep" | "awake" | null>(null);
@@ -72,22 +95,44 @@ export default function MatrixStudio(): ReactElement {
       .catch((error) => console.error("Matrix bay hint failed:", error));
   }, []);
 
+  // Re-queries whenever the selected panel changes (including the
+  // initial one on mount) — each panel has independent sleep state.
+  useEffect(() => {
+    invoke<boolean>("get_matrix_sleep", { panel })
+      .then((sleeping) => setSleepState(sleeping ? "asleep" : "awake"))
+      .catch((error) => {
+        console.error("Sleep state query failed:", error);
+        setSleepState(null);
+      });
+  }, [panel]);
+
   const onlyOnePanel = panelCount !== null && panelCount <= 1;
 
   const selectPanel = (p: Panel): void => {
     setPanel(p);
-    setSleepState(null);
     setSleepError(null);
+    // Cleared rather than left showing the outgoing panel's state — the
+    // `get_matrix_sleep` effect above re-queries on every panel change,
+    // but that query takes a real serial round-trip, so without this
+    // the Sleep/Wake buttons would keep showing the previous panel's
+    // state for a moment after switching, looking like they lag.
+    setSleepState(null);
   };
 
   const handleSleep = async (sleep: boolean): Promise<void> => {
     setSleepError(null);
+    // Updated immediately rather than after the round-trip resolves —
+    // waiting for `await` first meant clicking Sleep/Wake had a visible
+    // delay before the button highlighted, despite this having been
+    // documented as "optimistic." Rolled back if the command fails.
+    const previousState = sleepState;
+    setSleepState(sleep ? "asleep" : "awake");
     try {
       await invoke("set_matrix_sleep", { panel, sleep });
-      setSleepState(sleep ? "asleep" : "awake");
     } catch (error) {
       console.error("Sleep toggle failed:", error);
       setSleepError(String(error));
+      setSleepState(previousState);
     }
   };
 
@@ -103,7 +148,7 @@ export default function MatrixStudio(): ReactElement {
                 onClick={() => handleSleep(true)}
                 className={`p-2 rounded-lg border transition-colors ${
                   sleepState === "asleep"
-                    ? "bg-primary/10 border-primary/50 text-primary"
+                    ? "bg-primary/10 border-primary/50 text-primary hover:bg-primary/20"
                     : "bg-black/20 border-white/10 text-gray-400 hover:text-white"
                 }`}
               >
@@ -114,7 +159,7 @@ export default function MatrixStudio(): ReactElement {
                 onClick={() => handleSleep(false)}
                 className={`p-2 rounded-lg border transition-colors ${
                   sleepState === "awake"
-                    ? "bg-primary/10 border-primary/50 text-primary"
+                    ? "bg-primary/10 border-primary/50 text-primary hover:bg-primary/20"
                     : "bg-black/20 border-white/10 text-gray-400 hover:text-white"
                 }`}
               >
@@ -156,18 +201,21 @@ export default function MatrixStudio(): ReactElement {
         </div>
       </div>
 
-      <div className="mb-6">
+      <div className="mb-6 flex items-center gap-4 flex-wrap">
         <TabBar
           items={[
-            { to: "/matrix/canvas", label: "Canvas" },
+            { to: "/matrix/editor", label: "Editor" },
             { to: "/matrix/widgets", label: "Widgets" },
-            { to: "/matrix/animator", label: "Animator" },
           ]}
         />
+        {/* Populated via createPortal by whichever tab has its own
+            toolbar (see MatrixStudioContext's doc comment) — empty on
+            tabs like Widgets that don't. */}
+        <div ref={setToolbarSlot} className="flex items-center gap-3 flex-wrap" />
       </div>
 
       <div className="flex-1 min-h-0">
-        <Outlet context={{ panel } satisfies MatrixStudioContext} />
+        <Outlet context={{ panel, toolbarSlot } satisfies MatrixStudioContext} />
       </div>
     </div>
   );

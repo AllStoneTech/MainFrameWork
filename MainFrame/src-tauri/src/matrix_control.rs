@@ -32,7 +32,9 @@ const FRAMEWORK_VID: u16 = 0x32AC;
 const MATRIX_PID: u16 = 0x0020; // Confirmed on real hardware; see module docs above.
 
 const CMD_BRIGHTNESS: u8 = 0x00;
+const CMD_PATTERN: u8 = 0x01;
 const CMD_SLEEP: u8 = 0x03;
+const CMD_ANIMATE: u8 = 0x04;
 const CMD_DRAW: u8 = 0x06;
 
 const MATRIX_WIDTH: usize = 9;
@@ -102,6 +104,23 @@ fn send_visible_command(port: &mut dyn SerialPort, cmd: u8, params: &[u8]) -> Re
     send_command(port, cmd, params)
 }
 
+/// Sends `cmd` with no parameters and reads back one response byte — the
+/// "query" form `commands.md` describes for commands that share an ID
+/// between setting and reading a value ("When no parameters are given,
+/// the current value is queried and returned"). Framing matches the
+/// `commands.md` Python example verbatim for `CMD_SLEEP`
+/// (`send_command(0x03, [], with_response=True)` → `res[0]` as the bool)
+/// — `CMD_BRIGHTNESS` isn't shown as an example there, so its 1-byte
+/// response length is inferred by the same pattern, not independently
+/// confirmed.
+fn send_query(port: &mut dyn SerialPort, cmd: u8) -> Result<u8, String> {
+    send_command(port, cmd, &[])?;
+    let mut response = [0u8; 1];
+    port.read_exact(&mut response)
+        .map_err(|e| format!("No response reading back command 0x{cmd:02x}: {e}"))?;
+    Ok(response[0])
+}
+
 /// Packs a flat `MATRIX_WIDTH * MATRIX_HEIGHT` brightness buffer
 /// (0 = off, >0 = on) into the 1-bit-per-pixel, 39-byte layout DRAW_CMD
 /// expects: bit `i` (LSB-first within each byte) corresponds to
@@ -148,12 +167,108 @@ pub fn set_matrix_brightness(panel: String, brightness: u8) -> Result<String, St
     Ok("Brightness updated".to_string())
 }
 
+/// Displays one of the firmware's built-in patterns — see `commands.md`
+/// in FrameworkComputer/inputmodule-rs for the full list (gradients, a
+/// zigzag, the "LOTUS"/"PANIC" text patterns, a percentage fill, etc).
+/// `percentage` (0-100) is only meaningful for `pattern_id` 0
+/// (`Percentage`); ignored otherwise, defaulting to 100 if omitted.
+///
+/// **Not yet confirmed against real hardware.** Unlike `CMD_DRAW`/
+/// `CMD_BRIGHTNESS`/`CMD_SLEEP` (see the module doc comment above),
+/// this command is only verified against the protocol documentation
+/// (`commands.md`), not a physical module — treat failures here with
+/// more suspicion until it's actually been checked on real hardware.
+#[tauri::command]
+pub fn set_matrix_pattern(panel: String, pattern_id: u8, percentage: Option<u8>) -> Result<String, String> {
+    let mut port = port_for_panel(&panel)?;
+    let mut params = vec![pattern_id];
+    if pattern_id == 0 {
+        params.push(percentage.unwrap_or(100));
+    }
+    send_visible_command(port.as_mut(), CMD_PATTERN, &params)?;
+    Ok("Pattern set".to_string())
+}
+
+/// Starts or stops scrolling whatever pattern [`set_matrix_pattern`] last
+/// set — a bool toggle layered on top of the active built-in pattern,
+/// *not* a way to animate an arbitrary custom-drawn buffer (the firmware
+/// has no concept of a user-uploaded animation sequence; see the
+/// AnimatorTab.tsx doc comment on the frontend for why animation there
+/// is host-streamed instead).
+///
+/// **Not yet confirmed against real hardware** — see
+/// [`set_matrix_pattern`]'s doc comment.
+#[tauri::command]
+pub fn set_matrix_animate(panel: String, animate: bool) -> Result<String, String> {
+    let mut port = port_for_panel(&panel)?;
+    send_visible_command(port.as_mut(), CMD_ANIMATE, &[animate as u8])?;
+    Ok(if animate { "Animating".to_string() } else { "Animation stopped".to_string() })
+}
+
+/// [`set_matrix_pattern`] and [`set_matrix_animate`] together, over one
+/// serial connection instead of two. Selecting a built-in pattern from
+/// the frontend always sets both in the same action, and each of those
+/// two commands independently opens a fresh port (there's no cached
+/// handle — see `port_for_panel`'s doc comment) and sends its own wake
+/// byte via `send_visible_command`; calling them back to back was
+/// costing two full port-open round trips and a redundant second wake
+/// when one of each is enough. This is what the frontend actually calls
+/// now; `set_matrix_pattern`/`set_matrix_animate` stay available
+/// separately in case something needs just one of the two later.
+///
+/// **Not yet confirmed against real hardware** — see
+/// [`set_matrix_pattern`]'s doc comment.
+#[tauri::command]
+pub fn set_matrix_pattern_and_animate(
+    panel: String,
+    pattern_id: u8,
+    percentage: Option<u8>,
+    animate: bool,
+) -> Result<String, String> {
+    let mut port = port_for_panel(&panel)?;
+    let mut params = vec![pattern_id];
+    if pattern_id == 0 {
+        params.push(percentage.unwrap_or(100));
+    }
+    send_visible_command(port.as_mut(), CMD_PATTERN, &params)?;
+    send_command(port.as_mut(), CMD_ANIMATE, &[animate as u8])?;
+    Ok("Pattern set".to_string())
+}
+
 /// Puts one panel to sleep or wakes it.
 #[tauri::command]
 pub fn set_matrix_sleep(panel: String, sleep: bool) -> Result<String, String> {
     let mut port = port_for_panel(&panel)?;
     send_command(port.as_mut(), CMD_SLEEP, &[sleep as u8])?;
     Ok(if sleep { "Sleeping".to_string() } else { "Awake".to_string() })
+}
+
+/// Reads whether one panel is actually asleep right now, so the
+/// frontend can initialize its Sleep/Wake toggle from real device state
+/// instead of assuming "awake" — sleep persists on-device across app
+/// restarts (see the module doc comment), so that assumption is wrong
+/// whenever MainFrameWork starts up with a panel already asleep.
+///
+/// **Not yet confirmed against real hardware** — see
+/// [`set_matrix_pattern`]'s doc comment; this one is at least modeled
+/// directly on `commands.md`'s own worked Python example for this exact
+/// command, which the others don't have.
+#[tauri::command]
+pub fn get_matrix_sleep(panel: String) -> Result<bool, String> {
+    let mut port = port_for_panel(&panel)?;
+    Ok(send_query(port.as_mut(), CMD_SLEEP)? != 0)
+}
+
+/// Reads one panel's actual current brightness, so the frontend can
+/// initialize its Brightness slider from real device state instead of a
+/// hardcoded guess.
+///
+/// **Not yet confirmed against real hardware** — see
+/// [`set_matrix_pattern`]'s doc comment.
+#[tauri::command]
+pub fn get_matrix_brightness(panel: String) -> Result<u8, String> {
+    let mut port = port_for_panel(&panel)?;
+    send_query(port.as_mut(), CMD_BRIGHTNESS)
 }
 
 /// Maps a Laptop 16 input-module USB hub-port chain to a bay label.

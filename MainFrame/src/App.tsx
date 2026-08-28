@@ -24,6 +24,7 @@ import MatrixStudio from "./pages/matrix/MatrixStudio";
 import CanvasTab from "./pages/matrix/CanvasTab";
 import WidgetsTab from "./pages/matrix/WidgetsTab";
 import AnimatorTab from "./pages/matrix/AnimatorTab";
+import EditorTab from "./pages/matrix/EditorTab";
 
 import SystemHealth from "./pages/system/SystemHealth";
 import ThermalTab from "./pages/system/ThermalTab";
@@ -46,11 +47,15 @@ function App() {
             <Route path="macros" element={<MacrosTab />} />
           </Route>
 
+          {/* Canvas and Animator routes stay registered (reachable by
+              direct URL) even though MatrixStudio.tsx no longer lists
+              them as tab pills — see its doc comment for why. */}
           <Route path="matrix" element={<MatrixStudio />}>
-            <Route index element={<Navigate to="canvas" replace />} />
+            <Route index element={<Navigate to="editor" replace />} />
             <Route path="canvas" element={<CanvasTab />} />
             <Route path="widgets" element={<WidgetsTab />} />
             <Route path="animator" element={<AnimatorTab />} />
+            <Route path="editor" element={<EditorTab />} />
           </Route>
 
           <Route path="system" element={<SystemHealth />}>

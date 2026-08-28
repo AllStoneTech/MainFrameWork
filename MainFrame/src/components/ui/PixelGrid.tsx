@@ -14,6 +14,8 @@ interface PixelGridProps {
   interactive?: boolean;
   onPixelDown?: (index: number) => void;
   onPixelEnter?: (index: number) => void;
+  /** Cells to render as a translucent "about to be placed" preview — see the stamp tool (stampPlace.ts). Takes priority over the "off" style, but not over an already-lit pixel. */
+  ghostIndices?: ReadonlySet<number>;
 }
 
 /**
@@ -30,6 +32,7 @@ export function PixelGrid({
   interactive = true,
   onPixelDown,
   onPixelEnter,
+  ghostIndices,
 }: PixelGridProps): ReactElement {
   return (
     <div
@@ -47,6 +50,8 @@ export function PixelGrid({
           className={`rounded-[2px] transition-colors duration-75 border ${interactive ? "cursor-pointer" : ""} ${
             val > 0
               ? "bg-primary border-primary shadow-[0_0_8px_rgba(255,140,0,0.6)]"
+              : ghostIndices?.has(i)
+              ? "bg-primary/30 border-primary/40"
               : "bg-[#111] border-[#222] hover:bg-[#222]"
           }`}
         />
