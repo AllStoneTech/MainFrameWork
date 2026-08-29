@@ -64,8 +64,10 @@ pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
 }
 
 /// Un-hides and focuses the main window — shared by the tray menu's
-/// "Show" item and a left-click on the tray icon itself.
-fn show_main_window(app: &AppHandle) {
+/// "Show" item, a left-click on the tray icon itself, and the
+/// single-instance callback that runs when a second launch is redirected
+/// back to this process (see `lib.rs`).
+pub fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         let _ = window.show();
         let _ = window.set_focus();

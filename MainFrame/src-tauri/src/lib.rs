@@ -34,6 +34,12 @@ mod system_info;
 /// state, the tray icon, and every invokable command, then blocks on the
 /// event loop.
 ///
+/// `tauri_plugin_single_instance` must be the first plugin registered
+/// (per its own docs) so it can intercept a second launch before anything
+/// else runs: the new process hands its args/cwd to the already-running
+/// one via that callback and exits, instead of spawning a second window
+/// and a second tray icon.
+///
 /// # Panics
 /// Panics if the Tauri runtime fails to start (e.g. webview
 /// initialization failure) — mirrors the Tauri scaffold's default
@@ -41,6 +47,9 @@ mod system_info;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            tray::show_main_window(app);
+        }))
         .plugin(tauri_plugin_opener::init())
         .manage(keyboard_mapper::KeyboardHidState::default())
         .manage(system_info::SystemInfoState::default())
