@@ -48,7 +48,16 @@
 - [x] **[Core] VIA/HID Service**
   - **Rust:** Implement `hidapi` to send/receive Raw HID packets.
   - **Logic:** Port QMK/VIA protocol definitions to Rust structs.
-  - **Status:** RGB Lighting Control Implemented (MVP).
-- [ ] **[UI] Keymap Editor**
-  - Build Layer visualizer.
-  - Build Macro recorder.
+  - **Status:** RGB Lighting Control Implemented (MVP). Dynamic-keymap
+    (keymap + macro) commands added and confirmed against real Framework
+    Laptop 16 hardware — see `keyboard_mapper.rs`'s module doc comment
+    and its `hardware_probe` tests for what was actually verified.
+- [x] **[UI] Keymap Editor**
+  - Build Layer visualizer. — Done: `KeymapTab.tsx`, real ANSI matrix
+    (`frameworkAnsiMatrix.ts`), Basic/Media/Layer/Macro assignment.
+  - Build Macro recorder. — Done as a step editor rather than OS-level
+    recording (matching how VIA itself works): `MacrosTab.tsx` +
+    `macroEncoding.ts`. Both tested end-to-end on real hardware
+    (2026-09-01): keymap remap and macro assignment confirmed working.
+  - Numpad/Macropad devices and ISO/JIS layouts are out of scope — Main
+    Keyboard/ANSI only for this pass.
