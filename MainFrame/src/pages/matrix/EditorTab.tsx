@@ -21,12 +21,19 @@
  * abstracting too early would have meant repeatedly reworking a shared
  * hook instead of just the one component. Worth a real cleanup/dedup
  * pass once the shape settles and Canvas/Animator are actually deleted.
+ *
+ * Also re-syncs the device after the host resumes from sleep — see the
+ * `RESUME_EVENT` listener effect below, and `power_watch.rs` on the Rust
+ * side for how "resume" is detected. AnimatorTab/CanvasTab don't have
+ * this yet since they're the hidden, non-primary routes (see above); add
+ * it there too if they ever get re-linked from the nav.
  */
 import type { ReactElement } from "react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useOutletContext } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Eraser, Play, Pause, Plus, Redo2, Trash2, Undo2, Upload, Wand2 } from "lucide-react";
 import { Card } from "../../components/ui/Card";
 import { PatternPicker } from "../../components/ui/PatternPicker";
@@ -42,6 +49,7 @@ import { useBrushPaint } from "../../lib/pixelBrush";
 import { useStampPlace, type StampGlyph } from "../../lib/stampPlace";
 import { generateMarqueeFrames } from "../../lib/marqueeAnimator";
 import { loadSettings, patchSettings } from "../../lib/settings";
+import { RESUME_EVENT } from "../../lib/systemEvents";
 import { generatePattern, type PatternId } from "./CanvasTab";
 import { SETTINGS_KEY, SAVED_ARRANGEMENTS_KEY, SCHEDULE_KEY } from "./AnimatorTab";
 import type { MatrixStudioContext } from "./MatrixStudio";
@@ -91,6 +99,44 @@ export default function EditorTab(): ReactElement {
   const intervalRef = useRef<number | null>(null);
   const brightnessTimeoutRef = useRef<number | null>(null);
   const loaded = useRef(false);
+  // Replays whatever was last actually pushed to the device (a custom
+  // frame upload or a built-in pattern selection) — see the RESUME_EVENT
+  // effect below. The LED Matrix module is a separate USB device with no
+  // memory of its own across a host suspend, so without this the panel
+  // comes back blank/on its firmware boot pattern after the laptop
+  // wakes from sleep instead of showing what the user had up before.
+  const lastPushRef = useRef<(() => void) | null>(null);
+  // Kept in a ref (not read directly in the effect below) so the
+  // RESUME_EVENT listener always sees the current values without having
+  // to resubscribe every time brightness/panel change.
+  const panelRef = useRef(panel);
+  const brightnessRef = useRef(brightness);
+  const playingRef = useRef(playing);
+  panelRef.current = panel;
+  brightnessRef.current = brightness;
+  playingRef.current = playing;
+
+  // Re-syncs the device after the host resumes from sleep (see
+  // power_watch.rs on the Rust side for how "resume" is detected). Skips
+  // re-pushing a frame while Play is active — its own interval is
+  // already streaming frames on a schedule and will land on the correct
+  // frame within one `playbackInterval` tick regardless, so stepping in
+  // here would just race it over the same unpooled serial connection
+  // (see matrix_control.rs's `port_for_panel` doc comment). Brightness
+  // isn't part of Play's loop, so that's always reapplied.
+  useEffect(() => {
+    const unlisten = listen(RESUME_EVENT, () => {
+      invoke("set_matrix_brightness", { panel: panelRef.current, brightness: brightnessRef.current }).catch((err) =>
+        console.error("Post-resume brightness reapply failed:", err)
+      );
+      if (!playingRef.current) {
+        lastPushRef.current?.();
+      }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   useEffect(() => {
     loadSettings().then((settings) => {
@@ -212,6 +258,11 @@ export default function EditorTab(): ReactElement {
     setPlaying(false);
     setActiveFrameData(previewBuiltinPattern(id));
     setStatus("Sending pattern...");
+    lastPushRef.current = () => {
+      applyBuiltinPattern(panel, id, animate).catch((err) =>
+        console.error("Post-resume pattern re-apply failed:", err)
+      );
+    };
     applyBuiltinPattern(panel, id, animate)
       .then(() => {
         setStatus("Pattern sent");
@@ -250,6 +301,11 @@ export default function EditorTab(): ReactElement {
   };
 
   const uploadFrameToDevice = async (data: number[]): Promise<void> => {
+    lastPushRef.current = () => {
+      invoke("update_matrix", { imgData: data, panel }).catch((err) =>
+        console.error("Post-resume frame re-upload failed:", err)
+      );
+    };
     setStatus("Uploading...");
     try {
       await invoke("update_matrix", { imgData: data, panel });

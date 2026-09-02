@@ -5,21 +5,65 @@
  * status.
  */
 import type { ReactElement } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Lock, Info, Clock } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { invoke } from "@tauri-apps/api/core";
+import { isEnabled as isAutostartEnabled, enable as enableAutostart, disable as disableAutostart } from "@tauri-apps/plugin-autostart";
 import { Card } from "../components/ui/Card";
 import { Toggle } from "../components/ui/Toggle";
 import { StatusPill } from "../components/ui/StatusPill";
+import { loadSettings, patchSettings } from "../lib/settings";
 
 /**
  * App-level preferences. Theme/stealth-mode map to Docs/DATA_SCHEMA.md's
- * Global Config block; persistence via save_settings is a follow-up —
- * toggles are visual-only for now.
+ * Global Config block. Dark theme is fixed on for now (toggle disabled).
+ * Stealth mode is persisted via `save_settings` and also flips the tray
+ * icon's live visibility through the `set_tray_visible` command. Start
+ * on Boot is backed by `tauri-plugin-autostart` — its toggle reads/writes
+ * the OS's actual startup registration directly (Windows Registry Run
+ * key / Linux `.desktop` autostart entry) rather than a value in
+ * `save_settings`, so it can't drift from what the OS will really do.
  */
 export default function Settings(): ReactElement {
   const [darkTheme, setDarkTheme] = useState(true);
   const [stealthMode, setStealthMode] = useState(false);
+  const [startOnBoot, setStartOnBoot] = useState(false);
+  const [startOnBootError, setStartOnBootError] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadSettings().then((settings) => {
+      if (typeof settings.stealth_mode === "boolean") {
+        setStealthMode(settings.stealth_mode);
+      }
+    });
+    isAutostartEnabled()
+      .then(setStartOnBoot)
+      .catch((err: unknown) => console.error("Failed to query autostart state:", err));
+  }, []);
+
+  const handleStealthModeChange = (checked: boolean): void => {
+    setStealthMode(checked);
+    patchSettings({ stealth_mode: checked }).catch((err: unknown) =>
+      console.error("Failed to save stealth mode:", err)
+    );
+    invoke("set_tray_visible", { visible: !checked }).catch((err: unknown) =>
+      console.error("Failed to update tray visibility:", err)
+    );
+  };
+
+  const handleStartOnBootChange = async (checked: boolean): Promise<void> => {
+    const previous = startOnBoot;
+    setStartOnBoot(checked);
+    setStartOnBootError(null);
+    try {
+      await (checked ? enableAutostart() : disableAutostart());
+    } catch (err) {
+      console.error("Failed to update autostart registration:", err);
+      setStartOnBoot(previous);
+      setStartOnBootError(String(err));
+    }
+  };
 
   return (
     <div className="p-8 max-w-3xl">
@@ -32,10 +76,23 @@ export default function Settings(): ReactElement {
             <Toggle checked={darkTheme} onChange={setDarkTheme} label="Dark Theme" description="MainFrameWork is dark-mode only for now" disabled />
             <Toggle
               checked={stealthMode}
-              onChange={setStealthMode}
+              onChange={handleStealthModeChange}
               label="Stealth Mode"
-              description="Hide the tray icon and suppress notifications"
+              description="Hide the tray icon"
             />
+            <Toggle
+              checked={startOnBoot}
+              onChange={(checked) => {
+                handleStartOnBootChange(checked).catch((err: unknown) =>
+                  console.error("Unhandled autostart toggle error:", err)
+                );
+              }}
+              label="Start on Boot"
+              description="Launch MainFrameWork automatically when you log in"
+            />
+            {startOnBootError && (
+              <div className="text-xs text-red-500">Failed to update: {startOnBootError}</div>
+            )}
           </div>
         </Card>
 

@@ -7,9 +7,11 @@ import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Moon, Sun } from "lucide-react";
 import { TabBar } from "../../components/ui/TabBar";
 import type { ConnectedDevice } from "../../lib/types";
+import { RESUME_EVENT } from "../../lib/systemEvents";
 
 /** Which of the two independent 9x34 LED Matrix boards is targeted. */
 export type Panel = "Panel 1" | "Panel 2";
@@ -104,6 +106,22 @@ export default function MatrixStudio(): ReactElement {
         console.error("Sleep state query failed:", error);
         setSleepState(null);
       });
+  }, [panel]);
+
+  // Also re-queries after the host resumes from sleep: the LED Matrix
+  // module power-cycles across a host suspend (see power_watch.rs and
+  // EditorTab.tsx's own RESUME_EVENT handling), so a Sleep/Wake toggle
+  // showing "Sleeping" from before the laptop slept could easily be
+  // stale — the panel came back awake without MainFrameWork asking.
+  useEffect(() => {
+    const unlisten = listen(RESUME_EVENT, () => {
+      invoke<boolean>("get_matrix_sleep", { panel })
+        .then((sleeping) => setSleepState(sleeping ? "asleep" : "awake"))
+        .catch((error) => console.error("Post-resume sleep state query failed:", error));
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, [panel]);
 
   const onlyOnePanel = panelCount !== null && panelCount <= 1;

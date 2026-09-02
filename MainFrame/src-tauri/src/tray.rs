@@ -4,21 +4,24 @@
 //! (so LED Matrix / keyboard RGB state stays live) after the main window
 //! is closed, instead of quitting outright — the window's close button
 //! hides it rather than exiting; only the tray menu's "Quit" item ends
-//! the process. Settings' "Stealth Mode" toggle is meant to hide this
-//! icon, but that wiring isn't connected yet (see the toggle's own
-//! description in Settings.tsx) — this module always shows the icon.
+//! the process. Settings' "Stealth Mode" toggle hides this icon at
+//! runtime via [`set_tray_visible`]; the icon's initial visibility on
+//! launch is also seeded from the persisted `stealth_mode` setting (see
+//! `persistence.rs`) so a stealth session stays stealthy across restarts.
 
 use tauri::{
     menu::{Menu, MenuItem},
-    tray::TrayIconBuilder,
-    App, AppHandle, Manager, WindowEvent,
+    tray::{TrayIcon, TrayIconBuilder},
+    App, AppHandle, Manager, State, WindowEvent,
 };
 
 const MAIN_WINDOW_LABEL: &str = "main";
 
-/// Builds the tray icon + its Show/Quit menu, and wires the main window's
-/// close button to hide instead of quit. Called once from `run()`'s
-/// `.setup()` hook, since building the menu needs an `App`/`AppHandle`.
+/// Builds the tray icon + its Show/Quit menu, wires the main window's
+/// close button to hide instead of quit, and manages the built
+/// [`TrayIcon`] as app state so [`set_tray_visible`] can toggle it later.
+/// Called once from `run()`'s `.setup()` hook, since building the menu
+/// needs an `App`/`AppHandle`.
 pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
     let show_item = MenuItem::with_id(app, "show", "Show MainFrameWork", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -29,7 +32,7 @@ pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
         .cloned()
         .expect("bundle.icon must be configured in tauri.conf.json");
 
-    TrayIconBuilder::new()
+    let tray = TrayIconBuilder::new()
         .icon(icon)
         .menu(&menu)
         .tooltip("MainFrameWork")
@@ -50,6 +53,11 @@ pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
         })
         .build(app)?;
 
+    if crate::persistence::load_stealth_mode(app.handle()) {
+        tray.set_visible(false)?;
+    }
+    app.manage(tray);
+
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         let window_handle = window.clone();
         window.on_window_event(move |event| {
@@ -61,6 +69,15 @@ pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
     }
 
     Ok(())
+}
+
+/// Shows or hides the tray icon — backs the Settings page's "Stealth
+/// Mode" toggle. The caller (frontend) is responsible for persisting the
+/// `stealth_mode` flag via `save_settings`; this command only flips the
+/// live icon.
+#[tauri::command]
+pub fn set_tray_visible(tray: State<'_, TrayIcon>, visible: bool) -> Result<(), String> {
+    tray.set_visible(visible).map_err(|e| e.to_string())
 }
 
 /// Un-hides and focuses the main window — shared by the tray menu's

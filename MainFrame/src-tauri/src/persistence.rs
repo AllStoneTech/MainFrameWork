@@ -40,6 +40,7 @@ pub struct AppState {
     pub theme: String,
     pub keyboard_color_hex: String,
     pub matrix_enabled: bool,
+    pub stealth_mode: bool,
 }
 
 /// Default settings used when no `user_data.bin` exists yet (first run).
@@ -49,6 +50,7 @@ impl Default for AppState {
             theme: "dark".to_string(),
             keyboard_color_hex: "#ff8c00".to_string(),
             matrix_enabled: true,
+            stealth_mode: false,
         }
     }
 }
@@ -128,4 +130,16 @@ pub fn load_settings(app: AppHandle) -> Result<String, String> {
         .map_err(|_| "Invalid UTF-8 in decrypted data".to_string())?;
 
     Ok(json_string)
+}
+
+/// Reads the persisted `stealth_mode` flag directly (not exposed as a
+/// Tauri command — used by `tray.rs` during startup, before the
+/// frontend has loaded, to seed the tray icon's initial visibility).
+/// Defaults to `false` on any read/parse error, same as a fresh install.
+pub fn load_stealth_mode(app: &AppHandle) -> bool {
+    load_settings(app.clone())
+        .ok()
+        .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
+        .and_then(|value| value.get("stealth_mode").and_then(|v| v.as_bool()))
+        .unwrap_or(false)
 }

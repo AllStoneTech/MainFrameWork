@@ -11,6 +11,12 @@
 //! so it only logs when something actually changes). This is the single
 //! place new backend commands must be registered or the frontend will get
 //! an "unknown command" error at runtime.
+//!
+//! Also starts [`power_watch::watch_for_resume`]'s background thread,
+//! which notifies the frontend when the host wakes from sleep (see that
+//! module for why the LED Matrix needs to know), and registers
+//! `tauri_plugin_autostart` so Settings' "Start on Boot" toggle has
+//! something to call.
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 /// Trivial example command left over from the Tauri template; not used by
@@ -27,6 +33,7 @@ mod ec_check;
 mod ec_control;
 mod persistence;
 mod installer;
+mod power_watch;
 mod tray;
 mod system_info;
 
@@ -51,11 +58,16 @@ pub fn run() {
             tray::show_main_window(app);
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(keyboard_mapper::KeyboardHidState::default())
         .manage(system_info::SystemInfoState::default())
         .manage(device_manager::DeviceScanState::default())
         .setup(|app| {
             tray::setup_tray(app)?;
+            power_watch::watch_for_resume(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -85,6 +97,7 @@ pub fn run() {
             ec_control::set_fan_auto,
             persistence::save_settings,
             persistence::load_settings,
+            tray::set_tray_visible,
             installer::install_driver
         ])
         .run(tauri::generate_context!())
