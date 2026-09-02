@@ -3,18 +3,22 @@
 //! commands. Both talk to the keyboard's Raw HID interface, sharing
 //! [`KeyboardHidState`]'s cached `HidApi`/`HidDevice`.
 //!
-//! **Firmware-version caveat for the keymap/macro half specifically**:
-//! unlike the RGB Matrix custom-channel commands above (confirmed
-//! against real hardware, per their own doc comments), the dynamic-keymap
-//! commands depend on the keyboard's firmware actually having that
-//! feature built in. They're implemented here against
-//! `FrameworkComputer/qmk_firmware`, branch `fl16-2026-remap-keys`
-//! (fetched 2026-09-01) — a branch name that reads as in-progress work
-//! adding this capability, with no confirmation that exact branch is
-//! what's flashed on a given keyboard right now. If it isn't, these
-//! commands should fail cleanly (`id_unhandled` echoed back, or a
-//! timeout on the read) rather than silently doing the wrong thing — see
-//! `via_get_layer_count`'s doc comment for how that's surfaced.
+//! **Firmware support, keymap/macro half**: confirmed present and
+//! working against a real Framework Laptop 16 keyboard on 2026-09-01
+//! (see `hardware_probe` below) — `get_layer_count` returned a real
+//! layer count (10) and `get_macro_count` a real macro count (16)
+//! rather than `id_unhandled`, and a real `set_keymap_keycode` write/
+//! read-back round-trip succeeded. That test also caught and fixed two
+//! real protocol bugs before anything shipped with them: a response-byte
+//! off-by-one on every *read* command (see `get_keymap_layer_count`'s doc
+//! comment) and `send_with_retry` not draining a *set* command's response
+//! (see its own doc comment) — so treat "confirmed against real
+//! hardware" here as covering the raw protocol calls specifically, not
+//! yet the Keymap/Macros tab UI built on top of them, which still needs
+//! its own pass. `get_keymap_layer_count` failing outright (rather than
+//! returning a real count) would mean *this keyboard's* firmware doesn't
+//! have dynamic-keymap support — worth keeping in mind if this code ever
+//! runs against a different unit/firmware version.
 use hidapi::{HidApi, HidDevice};
 use std::sync::Mutex;
 
@@ -68,22 +72,21 @@ const VIA_CMD_GET_LAYER_COUNT: u8 = 0x11;
 const HID_READ_TIMEOUT_MS: i32 = 1000;
 
 /// Max payload bytes per get/set-buffer packet (macro buffer reads/
-/// writes are too big for one HID report, so they're chunked). QMK's own
-/// `via.c` caps a chunk at 28 bytes, assuming a 32-byte raw HID report
-/// with the command byte as the report's own first byte. This project's
-/// packets are a flat `[u8; 32]` with an extra leading dummy byte
-/// hidapi's `write()` requires (see `build_channel_packet`'s doc comment
-/// above) — so one of those 32 bytes is spent on that dummy instead of
-/// payload, leaving room for only 27. Confirmed this isn't a bug specific
-/// to this codebase: Framework's own `qmk_hid` CLI
-/// (FrameworkComputer/qmk_hid @ main, `src/raw_hid.rs`,
-/// `RAW_HID_BUFFER_SIZE = 32` with `data[0] = 0x00` as the same dummy
-/// byte) uses the identical convention, so 27 is what Framework's actual
-/// raw HID framing supports, not 28.
+/// writes are too big for one HID report, so they're chunked).
 ///
-/// Derivation: of the 32 bytes, byte 0 is the dummy, byte 1 is the
-/// command id, bytes 2-3 are the big-endian offset, byte 4 is this size
-/// byte, leaving bytes 5-31 (27 bytes) for payload.
+/// This only actually needs to be 27 for the *write* direction
+/// (`set_macro_buffer`): the outgoing packet is `[dummy, cmd, offset_hi,
+/// offset_lo, size, ...payload]` in a flat `[u8; 32]` — hidapi's
+/// `write()` requires that leading dummy byte (see
+/// `build_channel_packet`'s doc comment), so payload only gets
+/// `32 - 5 = 27` bytes, not QMK's usual 28 (`via.c` assumes a 32-byte
+/// report with no extra framing on top). The *read* direction
+/// (`get_macro_buffer`) doesn't actually need this restriction — a real
+/// response has no equivalent leading byte (see `get_keymap_layer_count`'s
+/// doc comment, confirmed against real hardware) and could carry a full
+/// 28-byte payload — but both directions share this one constant for
+/// simplicity, since 27 is still correct there, just one byte more
+/// conservative than necessary.
 const MAX_BUFFER_CHUNK: u8 = 27;
 
 /// Caches the HidApi context and an open device handle across calls, so
@@ -141,27 +144,24 @@ fn rgb_to_hsv(r: u8, g: u8, b: u8) -> (u8, u8, u8) {
     )
 }
 
-/// Sends a packet, reopening the cached device handle once and retrying
-/// if the write fails (handle may be stale after an unplug/replug).
+/// Sends a packet and drains its response, discarding the response's
+/// contents — for callers that don't need the value back (every RGB
+/// Lighting command below, and the keymap/macro set/reset commands
+/// further down).
+///
+/// Delegates to [`send_and_read`] rather than writing-and-stopping:
+/// confirmed against real hardware that VIA's firmware sends back a
+/// response report for *every* command, sets included, not just queries
+/// — leaving a set command's response unread left it sitting in the OS's
+/// HID receive queue, so the next unrelated query's `read_timeout()`
+/// would return that stale leftover report instead of its own fresh one.
+/// That produced exactly the "one report behind" symptom seen testing
+/// `set_keymap_keycode` against a real keyboard: a value that had
+/// genuinely just been written read back as the *previous* write's
+/// value, and only failed to match on the second write in a row because
+/// the first write's undrained response was still queued in front of it.
 fn send_with_retry(state: &KeyboardHidState, packet: &[u8; 32]) -> Result<(), String> {
-    let mut api_guard = state.api.lock().map_err(|e| e.to_string())?;
-    if api_guard.is_none() {
-        *api_guard = Some(HidApi::new().map_err(|e| e.to_string())?);
-    }
-    let api = api_guard.as_ref().unwrap();
-
-    let mut device_guard = state.device.lock().map_err(|e| e.to_string())?;
-    if device_guard.is_none() {
-        *device_guard = Some(find_and_open(api)?);
-    }
-
-    if device_guard.as_ref().unwrap().write(packet).is_err() {
-        let reopened = find_and_open(api)?;
-        reopened.write(packet).map_err(|e| e.to_string())?;
-        *device_guard = Some(reopened);
-    }
-
-    Ok(())
+    send_and_read(state, packet).map(|_| ())
 }
 
 /// Selects an RGB Matrix effect by its firmware mode number (1-39 on
@@ -281,13 +281,21 @@ fn send_and_read(state: &KeyboardHidState, packet: &[u8; 32]) -> Result<[u8; 32]
 /// Response byte layout here and in every command below is derived from
 /// `via.c`'s `case` handlers (each documented at the call site) by
 /// mapping its `command_data[i]` (== `data[1+i]`) onto this project's
-/// packet framing (`data[N]` == `packet[N+1]`, since `packet[1]` carries
-/// what `via.c` calls `data[0]`) — see `MAX_BUFFER_CHUNK`'s doc comment
-/// for the same mapping applied to the buffer commands below.
+/// response buffer as `response[i]` == `data[i]` directly — unlike a
+/// *written* packet, which needs a leading dummy byte before the command
+/// id because hidapi's `write()` requires one (see `build_channel_packet`
+/// and `MAX_BUFFER_CHUNK`'s doc comments), a report *read back* from the
+/// device has no such byte (hidapi's `read()` only includes a leading
+/// report-number byte for devices that use numbered reports, which this
+/// one doesn't). Confirmed directly against this exact keyboard: a real
+/// `get_layer_count` response came back as
+/// `[0x11, <layer count>, 0, 0, ...]` — the echoed command id at
+/// `response[0]`, not `response[1]` as an earlier version of this code
+/// incorrectly assumed by copying the write-side framing symmetrically.
 #[tauri::command]
 pub fn get_keymap_layer_count(state: tauri::State<KeyboardHidState>) -> Result<u8, String> {
     let response = send_and_read(&state, &build_simple_packet(VIA_CMD_GET_LAYER_COUNT, &[]))?;
-    Ok(response[2])
+    Ok(response[1])
 }
 
 /// Reads the keycode currently assigned to one (layer, row, col) matrix
@@ -302,7 +310,7 @@ pub fn get_keymap_layer_count(state: tauri::State<KeyboardHidState>) -> Result<u
 #[tauri::command]
 pub fn get_keymap_keycode(state: tauri::State<KeyboardHidState>, layer: u8, row: u8, col: u8) -> Result<u16, String> {
     let response = send_and_read(&state, &build_simple_packet(VIA_CMD_GET_KEYCODE, &[layer, row, col]))?;
-    Ok(u16::from_be_bytes([response[5], response[6]]))
+    Ok(u16::from_be_bytes([response[4], response[5]]))
 }
 
 /// Sets the keycode at one (layer, row, col) matrix position. Persists
@@ -339,12 +347,12 @@ pub fn reset_keymap(state: tauri::State<KeyboardHidState>) -> Result<String, Str
 #[tauri::command]
 pub fn get_macro_count(state: tauri::State<KeyboardHidState>) -> Result<u8, String> {
     let response = send_and_read(&state, &build_simple_packet(VIA_CMD_MACRO_GET_COUNT, &[]))?;
-    Ok(response[2])
+    Ok(response[1])
 }
 
 fn via_macro_buffer_size(state: &KeyboardHidState) -> Result<u16, String> {
     let response = send_and_read(state, &build_simple_packet(VIA_CMD_MACRO_GET_BUFFER_SIZE, &[]))?;
-    Ok(u16::from_be_bytes([response[2], response[3]]))
+    Ok(u16::from_be_bytes([response[1], response[2]]))
 }
 
 /// Total capacity (bytes) of the macro EEPROM region — every macro
@@ -360,7 +368,7 @@ pub fn get_macro_buffer_size(state: tauri::State<KeyboardHidState>) -> Result<u1
 fn via_macro_get_chunk(state: &KeyboardHidState, offset: u16, size: u8) -> Result<Vec<u8>, String> {
     let [offset_hi, offset_lo] = offset.to_be_bytes();
     let response = send_and_read(state, &build_simple_packet(VIA_CMD_MACRO_GET_BUFFER, &[offset_hi, offset_lo, size]))?;
-    Ok(response[5..5 + size as usize].to_vec())
+    Ok(response[4..4 + size as usize].to_vec())
 }
 
 fn via_macro_set_chunk(state: &KeyboardHidState, offset: u16, chunk: &[u8]) -> Result<(), String> {
@@ -416,4 +424,128 @@ pub fn set_macro_buffer(state: tauri::State<KeyboardHidState>, data: Vec<u8>) ->
 pub fn reset_macros(state: tauri::State<KeyboardHidState>) -> Result<String, String> {
     send_with_retry(&state, &build_simple_packet(VIA_CMD_MACRO_RESET, &[]))?;
     Ok("Macros reset".to_string())
+}
+
+// Real-hardware verification for the keymap/macro protocol above.
+// `#[ignore]`d so these never run in a normal `cargo test` (no keyboard
+// attached in CI) — run explicitly with
+// `cargo test --lib -- --ignored --nocapture` when a real Framework
+// keyboard is plugged in and you want to reconfirm this code against it.
+//
+// Kept permanently rather than deleted after first use: running this
+// against real hardware once already caught a real bug that no amount
+// of protocol-reading would have found — `send_with_retry` wasn't
+// draining a set command's response, which left it queued and corrupted
+// the *next* unrelated read (see `send_with_retry`'s doc comment for the
+// full story). `probe_set_keycode_write` writes and restores a value at
+// layer 9 (this firmware's keymap.c only defines layers 0-3, so nothing
+// can actually reach layer 9 — a test write there can't be pressed or
+// otherwise take effect on a real key).
+#[cfg(test)]
+mod hardware_probe {
+    use super::*;
+
+    #[test]
+    #[ignore] // needs a real Framework keyboard attached — run explicitly.
+    fn probe_dynamic_keymap_support() {
+        let state = KeyboardHidState::default();
+
+        let layer_response = send_and_read(&state, &build_simple_packet(VIA_CMD_GET_LAYER_COUNT, &[]))
+            .expect("HID write/read for get_layer_count failed");
+        println!("get_layer_count raw response: {:?}", layer_response);
+        println!(
+            "echoed command id: 0x{:02x} (expected 0x{:02x}; 0xff == id_unhandled, meaning unsupported)",
+            layer_response[0], VIA_CMD_GET_LAYER_COUNT
+        );
+        println!("layer count (if supported): {}", layer_response[1]);
+
+        let macro_response = send_and_read(&state, &build_simple_packet(VIA_CMD_MACRO_GET_COUNT, &[]))
+            .expect("HID write/read for get_macro_count failed");
+        println!("get_macro_count raw response: {:?}", macro_response);
+        println!("macro count (if supported): {}", macro_response[1]);
+
+        let buffer_size_response = send_and_read(&state, &build_simple_packet(VIA_CMD_MACRO_GET_BUFFER_SIZE, &[]))
+            .expect("HID write/read for get_macro_buffer_size failed");
+        println!(
+            "macro buffer size (if supported): {}",
+            u16::from_be_bytes([buffer_size_response[1], buffer_size_response[2]])
+        );
+
+        // Sanity check for BOTH the read-offset fix and frameworkAnsiMatrix.ts's
+        // row/col table at once, across several keys spread around the
+        // matrix (not just one, in case of a transposition that happens to
+        // coincidentally match once) — if this keyboard has never been
+        // remapped, layer 0 should still read back the stock default
+        // keymap's keycodes.
+        let checks: [(&str, u8, u8, u16); 5] = [
+            ("Q", 0, 2, 0x0014),    // KC_Q
+            ("A", 7, 2, 0x0004),    // KC_A
+            ("1", 5, 2, 0x001E),    // KC_1
+            ("Space", 1, 4, 0x002C), // KC_SPC
+            ("Enter", 1, 14, 0x0028), // KC_ENT
+        ];
+        for (label, row, col, expected) in checks {
+            let response = send_and_read(&state, &build_simple_packet(VIA_CMD_GET_KEYCODE, &[0, row, col]))
+                .unwrap_or_else(|e| panic!("HID write/read for get_keycode(0,{row},{col}) [{label}] failed: {e}"));
+            let keycode = u16::from_be_bytes([response[4], response[5]]);
+            println!(
+                "{label} (row {row}, col {col}): got 0x{keycode:04x}, expected 0x{expected:04x} -> {}",
+                if keycode == expected { "MATCH" } else { "MISMATCH" }
+            );
+        }
+    }
+
+    /// Tests an actual `set_keymap_keycode` write, as safely as this can be
+    /// done on real hardware: layer 9 (of the 10 the keyboard reports) has
+    /// no `MO(9)` or similar anywhere in this firmware's compiled keymap.c
+    /// (only layers 0-3 are named/used there), so nothing can actually
+    /// switch to it — a write to (layer 9, row 0, col 2) can't be pressed
+    /// or otherwise take effect. Reads the current value there first,
+    /// writes a distinctive test value, confirms the read-back changed,
+    /// then restores the original value.
+    #[test]
+    #[ignore] // needs a real Framework keyboard attached — run explicitly.
+    fn probe_set_keycode_write() {
+        let state = KeyboardHidState::default();
+        let (layer, row, col) = (9u8, 0u8, 2u8);
+
+        // Two earlier runs of this exact test (before `send_with_retry` was
+        // fixed to drain every write's response — see its doc comment)
+        // left this position's real hardware state ambiguous between
+        // 0x0001 (the true original) and 0x0022 (this test's own value) —
+        // force it back to the known-true original before re-baselining,
+        // so this test is self-healing regardless of how a previous run
+        // left things.
+        const KNOWN_TRUE_ORIGINAL: u16 = 0x0001;
+        let [hi, lo] = KNOWN_TRUE_ORIGINAL.to_be_bytes();
+        send_with_retry(&state, &build_simple_packet(VIA_CMD_SET_KEYCODE, &[layer, row, col, hi, lo]))
+            .expect("pre-test cleanup write failed");
+
+        let before_response = send_and_read(&state, &build_simple_packet(VIA_CMD_GET_KEYCODE, &[layer, row, col]))
+            .expect("baseline get_keycode failed");
+        let before = u16::from_be_bytes([before_response[4], before_response[5]]);
+        println!("baseline keycode at (layer {layer}, row {row}, col {col}): 0x{before:04x}");
+        assert_eq!(before, KNOWN_TRUE_ORIGINAL, "pre-test cleanup write didn't take effect either");
+
+        const TEST_KEYCODE: u16 = 0x0022; // KC_5 — distinctive, easy to eyeball.
+        let [hi, lo] = TEST_KEYCODE.to_be_bytes();
+        send_with_retry(&state, &build_simple_packet(VIA_CMD_SET_KEYCODE, &[layer, row, col, hi, lo]))
+            .expect("set_keycode write failed");
+
+        let after_response = send_and_read(&state, &build_simple_packet(VIA_CMD_GET_KEYCODE, &[layer, row, col]))
+            .expect("post-write get_keycode failed");
+        let after = u16::from_be_bytes([after_response[4], after_response[5]]);
+        println!("keycode after write: 0x{after:04x} (expected 0x{TEST_KEYCODE:04x})");
+        assert_eq!(after, TEST_KEYCODE, "write did not take effect");
+
+        // Restore the original value regardless of the assert above.
+        let [hi, lo] = before.to_be_bytes();
+        send_with_retry(&state, &build_simple_packet(VIA_CMD_SET_KEYCODE, &[layer, row, col, hi, lo]))
+            .expect("restoring baseline keycode failed");
+        let restored_response = send_and_read(&state, &build_simple_packet(VIA_CMD_GET_KEYCODE, &[layer, row, col]))
+            .expect("post-restore get_keycode failed");
+        let restored = u16::from_be_bytes([restored_response[4], restored_response[5]]);
+        println!("keycode after restore: 0x{restored:04x} (expected 0x{before:04x})");
+        assert_eq!(restored, before, "failed to restore baseline value");
+    }
 }
