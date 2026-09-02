@@ -1,3 +1,20 @@
+//! VIA/raw-HID keyboard service: RGB Matrix lighting control, and (below
+//! the lighting section) keymap + macro editing via QMK's dynamic-keymap
+//! commands. Both talk to the keyboard's Raw HID interface, sharing
+//! [`KeyboardHidState`]'s cached `HidApi`/`HidDevice`.
+//!
+//! **Firmware-version caveat for the keymap/macro half specifically**:
+//! unlike the RGB Matrix custom-channel commands above (confirmed
+//! against real hardware, per their own doc comments), the dynamic-keymap
+//! commands depend on the keyboard's firmware actually having that
+//! feature built in. They're implemented here against
+//! `FrameworkComputer/qmk_firmware`, branch `fl16-2026-remap-keys`
+//! (fetched 2026-09-01) — a branch name that reads as in-progress work
+//! adding this capability, with no confirmation that exact branch is
+//! what's flashed on a given keyboard right now. If it isn't, these
+//! commands should fail cleanly (`id_unhandled` echoed back, or a
+//! timeout on the read) rather than silently doing the wrong thing — see
+//! `via_get_layer_count`'s doc comment for how that's surfaced.
 use hidapi::{HidApi, HidDevice};
 use std::sync::Mutex;
 
@@ -28,6 +45,46 @@ const VIA_RGB_MATRIX_VALUE_BRIGHTNESS: u8 = 1;
 const VIA_RGB_MATRIX_VALUE_EFFECT: u8 = 2;
 const VIA_RGB_MATRIX_VALUE_EFFECT_SPEED: u8 = 3;
 const VIA_RGB_MATRIX_VALUE_COLOR: u8 = 4;
+
+// Dynamic-keymap VIA command IDs, from quantum/via.h in qmk/qmk_firmware
+// @ master (fetched 2026-09-01) — a stable part of the VIA protocol
+// itself (unlike the RGB Matrix effect-number caveats above, these
+// command IDs aren't Framework-specific and aren't expected to drift).
+const VIA_CMD_GET_KEYCODE: u8 = 0x04;
+const VIA_CMD_SET_KEYCODE: u8 = 0x05;
+const VIA_CMD_KEYMAP_RESET: u8 = 0x06;
+const VIA_CMD_MACRO_GET_COUNT: u8 = 0x0C;
+const VIA_CMD_MACRO_GET_BUFFER_SIZE: u8 = 0x0D;
+const VIA_CMD_MACRO_GET_BUFFER: u8 = 0x0E;
+const VIA_CMD_MACRO_SET_BUFFER: u8 = 0x0F;
+const VIA_CMD_MACRO_RESET: u8 = 0x10;
+const VIA_CMD_GET_LAYER_COUNT: u8 = 0x11;
+
+/// Timeout for reading back a VIA command's response report. VIA
+/// commands are normally answered within a couple milliseconds — this is
+/// generous headroom, not a tuned value, so a genuinely unresponsive
+/// keyboard (firmware doesn't support this command — see this module's
+/// doc comment) fails within a second rather than hanging.
+const HID_READ_TIMEOUT_MS: i32 = 1000;
+
+/// Max payload bytes per get/set-buffer packet (macro buffer reads/
+/// writes are too big for one HID report, so they're chunked). QMK's own
+/// `via.c` caps a chunk at 28 bytes, assuming a 32-byte raw HID report
+/// with the command byte as the report's own first byte. This project's
+/// packets are a flat `[u8; 32]` with an extra leading dummy byte
+/// hidapi's `write()` requires (see `build_channel_packet`'s doc comment
+/// above) — so one of those 32 bytes is spent on that dummy instead of
+/// payload, leaving room for only 27. Confirmed this isn't a bug specific
+/// to this codebase: Framework's own `qmk_hid` CLI
+/// (FrameworkComputer/qmk_hid @ main, `src/raw_hid.rs`,
+/// `RAW_HID_BUFFER_SIZE = 32` with `data[0] = 0x00` as the same dummy
+/// byte) uses the identical convention, so 27 is what Framework's actual
+/// raw HID framing supports, not 28.
+///
+/// Derivation: of the 32 bytes, byte 0 is the dummy, byte 1 is the
+/// command id, bytes 2-3 are the big-endian offset, byte 4 is this size
+/// byte, leaving bytes 5-31 (27 bytes) for payload.
+const MAX_BUFFER_CHUNK: u8 = 27;
 
 /// Caches the HidApi context and an open device handle across calls, so
 /// each command doesn't pay for a full HID re-enumeration.
@@ -155,4 +212,208 @@ pub fn set_keyboard_color(state: tauri::State<KeyboardHidState>, r: u8, g: u8, b
 pub fn save_keyboard_lighting(state: tauri::State<KeyboardHidState>) -> Result<String, String> {
     send_with_retry(&state, &build_channel_packet(VIA_CMD_CUSTOM_SAVE, VIA_CHANNEL_RGB_MATRIX, &[]))?;
     Ok("Saved".to_string())
+}
+
+// --- Keymap & Macro editing (QMK dynamic-keymap commands) ---
+//
+// Unlike the RGB Matrix channel above, dynamic-keymap writes
+// (`nvm_dynamic_keymap_update_keycode`/`_macro_update_buffer` in QMK's
+// `dynamic_keymap.c`) go straight to EEPROM on every call — there's no
+// separate "Save" commit step needed here.
+
+/// Builds a VIA packet with no channel byte: `[report_id, command_id,
+/// ...rest]` — the shape `id_dynamic_keymap_*`/`id_get_layer_count` use,
+/// as opposed to `build_channel_packet`'s `[report_id, command_id,
+/// channel_id, ...]` shape for the custom-value channel commands above.
+fn build_simple_packet(command_id: u8, rest: &[u8]) -> [u8; 32] {
+    let mut packet = [0u8; 32];
+    packet[0] = 0x00;
+    packet[1] = command_id;
+    packet[2..2 + rest.len()].copy_from_slice(rest);
+    packet
+}
+
+/// Writes `packet`, then reads back one 32-byte input report — for VIA
+/// commands that return data (keymap/macro reads, layer count), unlike
+/// the RGB Lighting commands above which are fire-and-forget.
+///
+/// Deliberately does *not* delegate the write half to [`send_with_retry`]
+/// and then lock `state.device` again for the read: that would drop the
+/// lock between write and read, and the Keymap editor fires many of
+/// these back-to-back (e.g. reading every key on a layer) — a second
+/// call's write could land in that gap, and this call's read would then
+/// come back with the wrong command's response. Holding `device_guard`
+/// across both the write and the read makes each call one atomic
+/// request/response round trip, so concurrent callers serialize safely
+/// on this lock instead of interleaving on the wire.
+fn send_and_read(state: &KeyboardHidState, packet: &[u8; 32]) -> Result<[u8; 32], String> {
+    let mut api_guard = state.api.lock().map_err(|e| e.to_string())?;
+    if api_guard.is_none() {
+        *api_guard = Some(HidApi::new().map_err(|e| e.to_string())?);
+    }
+    let api = api_guard.as_ref().unwrap();
+
+    let mut device_guard = state.device.lock().map_err(|e| e.to_string())?;
+    if device_guard.is_none() {
+        *device_guard = Some(find_and_open(api)?);
+    }
+
+    if device_guard.as_ref().unwrap().write(packet).is_err() {
+        let reopened = find_and_open(api)?;
+        reopened.write(packet).map_err(|e| e.to_string())?;
+        *device_guard = Some(reopened);
+    }
+
+    let mut response = [0u8; 32];
+    device_guard
+        .as_ref()
+        .unwrap()
+        .read_timeout(&mut response, HID_READ_TIMEOUT_MS)
+        .map_err(|e| format!("No response from keyboard (firmware may not support this command): {e}"))?;
+    Ok(response)
+}
+
+/// Number of keymap layers the firmware actually has (`keymaps[][][]`'s
+/// first dimension) — the Keymap editor should only offer this many
+/// layer tabs, not assume a fixed count, since that's compiled into
+/// firmware and this app has no other way to know it.
+///
+/// Response byte layout here and in every command below is derived from
+/// `via.c`'s `case` handlers (each documented at the call site) by
+/// mapping its `command_data[i]` (== `data[1+i]`) onto this project's
+/// packet framing (`data[N]` == `packet[N+1]`, since `packet[1]` carries
+/// what `via.c` calls `data[0]`) — see `MAX_BUFFER_CHUNK`'s doc comment
+/// for the same mapping applied to the buffer commands below.
+#[tauri::command]
+pub fn get_keymap_layer_count(state: tauri::State<KeyboardHidState>) -> Result<u8, String> {
+    let response = send_and_read(&state, &build_simple_packet(VIA_CMD_GET_LAYER_COUNT, &[]))?;
+    Ok(response[2])
+}
+
+/// Reads the keycode currently assigned to one (layer, row, col) matrix
+/// position. Row/col addressing (rather than a linear buffer offset) is
+/// the point of this command over the bulk `id_dynamic_keymap_get_buffer`
+/// — the firmware resolves the position internally, so the host never
+/// needs to know the matrix's total row/col counts as a prerequisite.
+///
+/// `via.c`: `case id_dynamic_keymap_get_keycode` reads `command_data[0..3)`
+/// as `(layer, row, col)` and writes the keycode's two bytes (big-endian)
+/// to `command_data[3]`/`command_data[4]`.
+#[tauri::command]
+pub fn get_keymap_keycode(state: tauri::State<KeyboardHidState>, layer: u8, row: u8, col: u8) -> Result<u16, String> {
+    let response = send_and_read(&state, &build_simple_packet(VIA_CMD_GET_KEYCODE, &[layer, row, col]))?;
+    Ok(u16::from_be_bytes([response[5], response[6]]))
+}
+
+/// Sets the keycode at one (layer, row, col) matrix position. Persists
+/// immediately (see this section's doc comment) — no separate save call.
+#[tauri::command]
+pub fn set_keymap_keycode(
+    state: tauri::State<KeyboardHidState>,
+    layer: u8,
+    row: u8,
+    col: u8,
+    keycode: u16,
+) -> Result<String, String> {
+    let [hi, lo] = keycode.to_be_bytes();
+    send_with_retry(&state, &build_simple_packet(VIA_CMD_SET_KEYCODE, &[layer, row, col, hi, lo]))?;
+    Ok("Keycode set".to_string())
+}
+
+/// Resets every layer's keymap back to the firmware's compiled-in
+/// default — irreversible from MainFrameWork's side (there's no "undo",
+/// only whatever the firmware shipped with). The frontend should gate
+/// this behind an explicit confirmation rather than exposing it as a
+/// plain button.
+#[tauri::command]
+pub fn reset_keymap(state: tauri::State<KeyboardHidState>) -> Result<String, String> {
+    send_with_retry(&state, &build_simple_packet(VIA_CMD_KEYMAP_RESET, &[]))?;
+    Ok("Keymap reset to firmware default".to_string())
+}
+
+/// Number of macro slots the firmware supports — the Macros tab should
+/// list exactly this many slots (padding/truncating whatever the buffer
+/// itself 0x00-splits to, since a fresh/short buffer can 0x00-split to
+/// fewer segments than this — see `macroEncoding.ts`'s `ensureSlotCount`
+/// on the frontend).
+#[tauri::command]
+pub fn get_macro_count(state: tauri::State<KeyboardHidState>) -> Result<u8, String> {
+    let response = send_and_read(&state, &build_simple_packet(VIA_CMD_MACRO_GET_COUNT, &[]))?;
+    Ok(response[2])
+}
+
+fn via_macro_buffer_size(state: &KeyboardHidState) -> Result<u16, String> {
+    let response = send_and_read(state, &build_simple_packet(VIA_CMD_MACRO_GET_BUFFER_SIZE, &[]))?;
+    Ok(u16::from_be_bytes([response[2], response[3]]))
+}
+
+/// Total capacity (bytes) of the macro EEPROM region — every macro
+/// slot's encoded bytes share this one fixed-size pool (see
+/// `get_macro_buffer`'s doc comment), so the frontend needs this to warn
+/// before a save that would overflow it rather than let a chunked write
+/// silently run past the space that's actually there.
+#[tauri::command]
+pub fn get_macro_buffer_size(state: tauri::State<KeyboardHidState>) -> Result<u16, String> {
+    via_macro_buffer_size(&state)
+}
+
+fn via_macro_get_chunk(state: &KeyboardHidState, offset: u16, size: u8) -> Result<Vec<u8>, String> {
+    let [offset_hi, offset_lo] = offset.to_be_bytes();
+    let response = send_and_read(state, &build_simple_packet(VIA_CMD_MACRO_GET_BUFFER, &[offset_hi, offset_lo, size]))?;
+    Ok(response[5..5 + size as usize].to_vec())
+}
+
+fn via_macro_set_chunk(state: &KeyboardHidState, offset: u16, chunk: &[u8]) -> Result<(), String> {
+    let [offset_hi, offset_lo] = offset.to_be_bytes();
+    let mut rest = Vec::with_capacity(3 + chunk.len());
+    rest.push(offset_hi);
+    rest.push(offset_lo);
+    rest.push(chunk.len() as u8);
+    rest.extend_from_slice(chunk);
+    send_with_retry(state, &build_simple_packet(VIA_CMD_MACRO_SET_BUFFER, &rest))
+}
+
+/// Reads the entire macro buffer, chunked into `MAX_BUFFER_CHUNK`-sized
+/// reads (one HID report can't carry the whole thing — the buffer holds
+/// every macro slot's encoded steps concatenated together, each
+/// terminated by a single `0x00` byte, so it's easily hundreds of bytes).
+/// The frontend (`macroEncoding.ts`) owns splitting this back into
+/// individual slots and decoding each slot's steps.
+#[tauri::command]
+pub fn get_macro_buffer(state: tauri::State<KeyboardHidState>) -> Result<Vec<u8>, String> {
+    let total_size = via_macro_buffer_size(&state)?;
+    let mut buffer = Vec::with_capacity(total_size as usize);
+    let mut offset: u16 = 0;
+    while offset < total_size {
+        let chunk_size = (total_size - offset).min(MAX_BUFFER_CHUNK as u16) as u8;
+        buffer.extend(via_macro_get_chunk(&state, offset, chunk_size)?);
+        offset += chunk_size as u16;
+    }
+    Ok(buffer)
+}
+
+/// Writes the entire macro buffer, chunked the same way `get_macro_buffer`
+/// reads it. `data` must fit within `get_macro_buffer_size`'s value — the
+/// macro EEPROM region is a fixed size, it can't grow to fit more; the
+/// frontend should check that before calling this rather than relying on
+/// this command to reject an oversized write cleanly (a chunked write
+/// that runs past the real capacity has no well-defined firmware-side
+/// behavior here, so this deliberately doesn't attempt to allow for it).
+#[tauri::command]
+pub fn set_macro_buffer(state: tauri::State<KeyboardHidState>, data: Vec<u8>) -> Result<String, String> {
+    let mut offset: u16 = 0;
+    while (offset as usize) < data.len() {
+        let end = (offset as usize + MAX_BUFFER_CHUNK as usize).min(data.len());
+        via_macro_set_chunk(&state, offset, &data[offset as usize..end])?;
+        offset = end as u16;
+    }
+    Ok("Macro buffer saved".to_string())
+}
+
+/// Clears every macro slot back to empty. Irreversible, same caveat as
+/// `reset_keymap` — the frontend should gate this behind confirmation.
+#[tauri::command]
+pub fn reset_macros(state: tauri::State<KeyboardHidState>) -> Result<String, String> {
+    send_with_retry(&state, &build_simple_packet(VIA_CMD_MACRO_RESET, &[]))?;
+    Ok("Macros reset".to_string())
 }
