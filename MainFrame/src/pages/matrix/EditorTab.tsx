@@ -274,15 +274,55 @@ export default function EditorTab(): ReactElement {
       });
   };
 
+  // Inserts right after the currently-selected frame rather than always
+  // appending at the end, so "Add Frame" while reviewing frame 2 of 5
+  // doesn't drop the new blank frame at the very end where it has to be
+  // dragged all the way back.
   const addFrame = (): void => {
-    framesHistory.commit((prev) => [...prev, BLANK_FRAME()]);
-    setActiveFrame(frames.length);
+    const insertAt = activeFrame + 1;
+    framesHistory.commit((prev) => {
+      const next = [...prev];
+      next.splice(insertAt, 0, BLANK_FRAME());
+      return next;
+    });
+    setActiveFrame(insertAt);
   };
 
   const deleteFrame = (index: number): void => {
     if (frames.length === 1) return;
     framesHistory.commit((prev) => prev.filter((_, i) => i !== index));
     setActiveFrame((prev) => Math.max(0, prev >= index ? prev - 1 : prev));
+  };
+
+  // Drag-to-reorder for the frame strip. `dragFrameIndexRef` (not state)
+  // holds the dragged index across the drag gesture — it doesn't need to
+  // trigger a re-render, and using a ref means a drag that ends outside
+  // any drop target (e.g. dropped off the strip) just leaves it stale
+  // until overwritten by the next drag, harmlessly.
+  const dragFrameIndexRef = useRef<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  const handleFrameDrop = (dropIndex: number): void => {
+    const dragIndex = dragFrameIndexRef.current;
+    dragFrameIndexRef.current = null;
+    setDragOverIndex(null);
+    if (dragIndex === null || dragIndex === dropIndex) return;
+
+    framesHistory.commit((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(dragIndex, 1);
+      next.splice(dropIndex, 0, moved);
+      return next;
+    });
+    // Keeps the same logical frame "active" across the reorder, whether
+    // that's the frame that just moved or one that shifted because of it
+    // — mirrors deleteFrame's index bookkeeping above.
+    setActiveFrame((prev) => {
+      if (prev === dragIndex) return dropIndex;
+      if (dragIndex < prev && dropIndex >= prev) return prev - 1;
+      if (dragIndex > prev && dropIndex <= prev) return prev + 1;
+      return prev;
+    });
   };
 
   const clearActiveFrame = (): void => {
@@ -544,13 +584,41 @@ export default function EditorTab(): ReactElement {
           {frames.map((frame, i) => (
             <div
               key={i}
+              draggable
+              onDragStart={(e) => {
+                dragFrameIndexRef.current = i;
+                // Chromium (WebView2) treats a drag with no transferred
+                // data as invalid regardless of what onDragOver does —
+                // every drop target shows the "not allowed" cursor
+                // without this, even though preventDefault() below is
+                // otherwise all a same-page reorder needs.
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", String(i));
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                if (dragOverIndex !== i) setDragOverIndex(i);
+              }}
+              onDragLeave={() => {
+                setDragOverIndex((prev) => (prev === i ? null : prev));
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                handleFrameDrop(i);
+              }}
+              onDragEnd={() => {
+                dragFrameIndexRef.current = null;
+                setDragOverIndex(null);
+              }}
               onClick={() => {
                 setPlaying(false);
                 setActiveFrame(i);
               }}
-              className={`relative shrink-0 p-1 rounded border cursor-pointer group ${
+              title="Drag to reorder"
+              className={`relative shrink-0 p-1 rounded border cursor-grab active:cursor-grabbing group ${
                 activeFrame === i ? "border-primary bg-primary/10" : "border-white/10 bg-black/20 hover:border-white/30"
-              }`}
+              } ${dragOverIndex === i ? "ring-2 ring-primary" : ""}`}
             >
               <PixelGrid width={WIDTH} height={HEIGHT} pixels={frame} cellSize={1} gap={0.5} interactive={false} />
               {frames.length > 1 && (
