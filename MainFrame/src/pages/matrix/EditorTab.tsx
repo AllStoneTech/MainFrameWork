@@ -278,7 +278,19 @@ export default function EditorTab(): ReactElement {
   // appending at the end, so "Add Frame" while reviewing frame 2 of 5
   // doesn't drop the new blank frame at the very end where it has to be
   // dragged all the way back.
+  //
+  // Stops Play first, same as uploadCurrentFrame/handleSelectCustomPattern/
+  // handleSelectBuiltinPattern above: any of these three actions changes
+  // `frames`' *shape* (not just the active frame's contents), which tears
+  // down and rebuilds Play's own interval (it depends on `frames`) — doing
+  // that while a previous tick's `update_matrix` call is still opening the
+  // unpooled serial connection (see `port_for_panel`'s doc comment) risks
+  // two writers on the same COM port at once. Confirmed this isn't just
+  // theoretical: reordering frames via drag while Play was running froze
+  // the whole app (Windows reported it as "Not Responding") until whatever
+  // was contending on the port eventually gave up.
   const addFrame = (): void => {
+    setPlaying(false);
     const insertAt = activeFrame + 1;
     framesHistory.commit((prev) => {
       const next = [...prev];
@@ -290,6 +302,7 @@ export default function EditorTab(): ReactElement {
 
   const deleteFrame = (index: number): void => {
     if (frames.length === 1) return;
+    setPlaying(false);
     framesHistory.commit((prev) => prev.filter((_, i) => i !== index));
     setActiveFrame((prev) => Math.max(0, prev >= index ? prev - 1 : prev));
   };
@@ -308,6 +321,7 @@ export default function EditorTab(): ReactElement {
     setDragOverIndex(null);
     if (dragIndex === null || dragIndex === dropIndex) return;
 
+    setPlaying(false);
     framesHistory.commit((prev) => {
       const next = [...prev];
       const [moved] = next.splice(dragIndex, 1);
