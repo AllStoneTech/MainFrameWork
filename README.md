@@ -11,15 +11,16 @@
 > at your own risk; see [SECURITY.md](SECURITY.md) for the honest posture
 > and known trade-offs.
 
-A unified desktop control panel for Framework hardware: keyboard remapping
-and RGB lighting, LED Matrix drawing/animation, and system health (fans,
-battery, expansion cards) in one lightweight Tauri app, instead of several
-separate utilities.
+A unified desktop control panel for Framework hardware: keyboard remapping,
+macros, and RGB lighting, LED Matrix drawing/animation with live system-data
+widgets, and system health (fans, battery, expansion cards) in one
+lightweight Tauri app, instead of several separate utilities.
 
-Matrix drawing/animation and keyboard RGB lighting work today, verified
-against real hardware. Keymap remapping and system health are UI-complete
-but not yet wired up — see [Features](#features) below for the full
-breakdown.
+Keyboard remapping/macros, RGB lighting, and Matrix drawing/animation all
+work today, verified against real hardware. System health's fan/battery/
+sensor data is real on Linux but hasn't been run against actual Linux
+hardware yet, and is deliberately unimplemented on Windows — see
+[Features](#features) below for the full breakdown.
 
 ## Runs entirely on your machine
 
@@ -32,12 +33,31 @@ opens your system browser. See [SECURITY.md](SECURITY.md) for what
 
 Working today, verified against real hardware:
 
-- **Matrix Studio** — Live drawing canvas and a frame-by-frame animator that
-  write directly to the LED Matrix expansion card over serial, plus
-  brightness and sleep control.
+- **Matrix Studio Editor** — Live drawing canvas and a frame-by-frame
+  animator that writes directly to the LED Matrix expansion card over
+  serial, with brightness/sleep control, drag-to-reorder frames, and
+  "Add Frame" inserting after whichever frame is selected. A frame can
+  also be a **live widget frame** (Clock/Battery/CPU Load) that re-renders
+  from current system data every time it's shown during playback, instead
+  of a fixed picture.
+- **Matrix Studio Widgets** — A separate composer for a stacked layout of
+  the same live widgets (Clock — 24h/12h, digital or analog face —
+  Battery, CPU Load), pushed to the panel on a "Start Live Render" toggle.
+  Audio EQ is listed but disabled — it needs live system audio capture,
+  which this app doesn't have, and it won't fake one.
+- **Keymap remapping & Macros** (Input Studio) — real key reassignment over
+  VIA's dynamic-keymap raw-HID protocol (Basic/Media/Layer/Macro
+  categories), and a macro step editor (type text / tap / hold / release /
+  delay — not OS-level keystroke recording, matching how VIA itself
+  works). ANSI keyboard layout only; Numpad/Macropad and ISO/JIS are out of
+  scope for now.
 - **Keyboard RGB Lighting** — Color, effect, effect speed, and brightness
   control over VIA's raw HID protocol, with EEPROM save so it persists
   without MainFrameWork running.
+- **System Tray** — Runs in the background after the window closes (so RGB/
+  LED Matrix state stays live), with an optional Stealth Mode to hide the
+  icon, a Start on Boot toggle, and automatic LED Matrix recovery when the
+  host wakes from sleep.
 - **Expansion Inspector** — Live USB-based detection of expansion cards that
   expose their own identity (HDMI/DisplayPort, Audio); passive cards
   (USB-A/C, SD, Ethernet) can't be detected this way and aren't shown.
@@ -46,12 +66,8 @@ Working today, verified against real hardware:
 
 Built as UI, not yet wired to hardware:
 
-- **Keymap remapping & Macros** (Input Studio) — editor and macro list
-  exist, not yet connected to the real keycode matrix or macro protocol.
 - **Numpad / Macropad detection** — PIDs aren't confirmed yet, so these show
   as "Unknown" rather than by name.
-- **Widget library** (Matrix Studio) — layout composer for clock/battery/CPU
-  widgets; doesn't push a live render to the matrix yet.
 - **System Health** (Thermal, Battery, Sensors) — real EC-backed data on
   Linux (`/dev/cros_ec`, no driver install needed): battery status, charge
   limit, temperature sensors, fan RPM/duty/auto. Written and type-checked,

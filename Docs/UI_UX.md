@@ -27,13 +27,21 @@
 
 - **The Framework Deck:** A visual map of connected modules.
 - **Visualizer:** Full render of the active module.
-- **Key Remapper:** Click key -> Open Remap Modal.
+- **Key Remapper:** Click a key on the rendered keyboard, then pick an
+  action from the side panel (Basic/Media/Layer/Macro) — a real
+  side-panel assign flow rather than a modal, wired to VIA's raw-HID
+  dynamic-keymap protocol.
 
 #### 3. Matrix Studio
 
-- **The Canvas:** 34x9 grid drawing tool.
-- **Widget Library:** Drag-and-drop items (Clock, CPU).
-- **Live Preview:** Drawings update on the physical hardware instantly.
+- **The Canvas/Editor:** 9x34 grid drawing tool with a frame-by-frame
+  animator — draggable frame reorder, and a frame can be a live widget
+  (Clock/Battery/CPU Load) that re-renders from current system data every
+  time it's shown, not just a fixed picture.
+- **Widget Library:** Drag-and-drop items (Clock, Battery, CPU Load, Audio
+  EQ — EQ shown but disabled, no live audio capture backend exists).
+- **Live Preview:** Drawings/widgets update on the physical hardware
+  instantly once "Start Live Render"/Play is on.
 
 #### 4. System & Health
 

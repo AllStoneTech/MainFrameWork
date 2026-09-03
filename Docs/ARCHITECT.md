@@ -48,6 +48,21 @@ GPLv3 source; see Security Posture below for the honest version.)
 
 - **Libraries:** `hidapi-rs` (Keyboard/Via), `serialport` (Matrix).
 - **Behavior:** Direct binary communication with QMK devices and RP2040.
+- **VIA dynamic-keymap (keymap + macros):** `keyboard_mapper.rs` — real
+  key reassignment and a macro-buffer editor over VIA's raw-HID
+  dynamic-keymap commands, confirmed against real Framework Laptop 16
+  hardware (see that file's module doc comment and its `hardware_probe`
+  tests). ANSI layout only; the physical key→matrix-position table
+  (`frameworkAnsiMatrix.ts`) was reconstructed from Framework's own
+  firmware source, since this app has no VIA-style per-keyboard layout
+  definition to read it from.
+- **Matrix serial access is mutex-guarded** (`MatrixSerialState` in
+  `matrix_control.rs`): `port_for_panel` opens a fresh, uncached
+  connection per command with no persistent handle, so two commands
+  landing at once (different tabs, or a live-render loop racing a mount)
+  could both try to open the same COM port — confirmed on real hardware
+  that this hangs the whole app rather than failing fast. A single global
+  lock held for the whole port-open-to-close span serializes all callers.
 
 **C. System Service (EC/Platform)**
 
@@ -80,17 +95,26 @@ GPLv3 source; see Security Posture below for the honest version.)
      rather than automating or prompting for that trade-off — see its doc
      comment and [SECURITY.md](../SECURITY.md) for the full reasoning.
 
-**D. Tray & Window Lifecycle (`tray.rs`)**
+**D. Tray & Window Lifecycle (`tray.rs`, `power_watch.rs`)**
 
 - **Behavior:** Builds a system tray icon with a Show/Quit menu on startup.
   Intercepts the main window's close event and hides it instead of exiting
-  the process — only the tray's "Quit" item calls `app.exit(0)`.
+  the process — only the tray's "Quit" item calls `app.exit(0)`. Stealth
+  Mode (Settings) toggles the icon's real visibility via `set_tray_visible`,
+  read from persisted settings on launch too.
 - **Why:** Keyboard RGB and LED Matrix state should keep running in the
   background after the window is closed, not die with it.
-- **Status:** Compiles and links cleanly, not yet manually verified against
-  a running window. See the root [README's System Tray
-  section](../README.md#system-tray) for the user-facing behavior and the
-  same caveat.
+- **Sleep/resume recovery:** `power_watch.rs` detects the host waking from
+  sleep (comparing a monotonic clock, which stops advancing while
+  suspended, against the wall clock, which doesn't — no OS-specific hooks
+  needed) and emits a `system-resumed` event the frontend uses to
+  re-push whatever should currently be on the LED Matrix, since the
+  module itself loses all state across a host suspend.
+- **Start on Boot:** `tauri-plugin-autostart`, reading/writing the OS's
+  real startup registration directly rather than a value in the settings
+  blob, so it can't drift out of sync with what the OS will actually do.
+- **Status:** Verified against a real running window — see the root
+  [README's System Tray section](../README.md#system-tray).
 
 ---
 
