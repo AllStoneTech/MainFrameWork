@@ -27,6 +27,18 @@
  * side for how "resume" is detected. AnimatorTab/CanvasTab don't have
  * this yet since they're the hidden, non-primary routes (see above); add
  * it there too if they ever get re-linked from the nav.
+ *
+ * Frames can also be "live widget" frames (Clock/Battery/CPU Load,
+ * `matrixFrames.ts`/`matrixWidgets.ts`) instead of hand-drawn pixels —
+ * inserted the same way as a blank frame, but rendered fresh from
+ * current system data every time they're displayed or played back,
+ * rather than a frozen snapshot of whatever was true when inserted.
+ * Live data (`now`/`batteryPercent`/`cpuPercent`) is only polled while at
+ * least one widget frame actually exists in the sequence — see
+ * `hasWidgetFrame` below — so a purely hand-drawn animation costs
+ * nothing extra. AnimatorTab/CanvasTab don't gain widget-frame support
+ * here; they still only ever write plain pixel arrays, which
+ * `normalizeFrame` upgrades transparently on load either way.
  */
 import type { ReactElement } from "react";
 import { useEffect, useRef, useState } from "react";
@@ -34,7 +46,7 @@ import { createPortal } from "react-dom";
 import { useOutletContext } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Eraser, Play, Pause, Plus, Redo2, Trash2, Undo2, Upload, Wand2 } from "lucide-react";
+import { BatteryMedium, Clock, Cpu, Eraser, Play, Pause, Plus, Redo2, Trash2, Undo2, Upload, Wand2 } from "lucide-react";
 import { Card } from "../../components/ui/Card";
 import { PatternPicker } from "../../components/ui/PatternPicker";
 import { PixelGrid } from "../../components/ui/PixelGrid";
@@ -45,6 +57,8 @@ import { StampPalette } from "../../components/ui/StampPalette";
 import { ToolModeToggle, type ToolMode } from "../../components/ui/ToolModeToggle";
 import { useHistory, useUndoRedoShortcuts } from "../../lib/history";
 import { applyBuiltinPattern, BUILTIN_PATTERNS, previewBuiltinPattern } from "../../lib/matrixPatterns";
+import { blankFrame, normalizeFrame, resolveFramePixels, type EditorFrame } from "../../lib/matrixFrames";
+import type { WidgetLiveData } from "../../lib/matrixWidgets";
 import { useBrushPaint } from "../../lib/pixelBrush";
 import { useStampPlace, type StampGlyph } from "../../lib/stampPlace";
 import { generateMarqueeFrames } from "../../lib/marqueeAnimator";
@@ -67,7 +81,21 @@ const MAX_MARQUEE_SPEED = 4;
 // matrix_control.rs's `port_for_panel` doc comment), so a burst of them
 // collide/queue on the same port and updates lag or get silently dropped.
 const BRIGHTNESS_DEBOUNCE_MS = 80;
-const BLANK_FRAME = (): number[] => new Array(WIDTH * HEIGHT).fill(0);
+const CLOCK_TICK_MS = 1000;
+// Matches BatteryTab.tsx's/WidgetsTab.tsx's own 5000ms poll cadence —
+// battery/CPU don't need per-second freshness, and EC/sysinfo reads
+// aren't free.
+const HARDWARE_POLL_TICKS = 5;
+
+interface BatterySnapshot {
+  charge_percentage: number;
+}
+
+const WIDGET_FRAME_BUTTONS: { type: "clock" | "battery" | "cpu"; label: string; icon: typeof Clock }[] = [
+  { type: "clock", label: "Clock frame", icon: Clock },
+  { type: "battery", label: "Battery frame", icon: BatteryMedium },
+  { type: "cpu", label: "CPU Load frame", icon: Cpu },
+];
 
 const CUSTOM_PATTERNS: { id: PatternId; label: string }[] = [
   { id: "blank", label: "Blank" },
@@ -81,7 +109,7 @@ const CUSTOM_PATTERNS: { id: PatternId; label: string }[] = [
 
 export default function EditorTab(): ReactElement {
   const { panel, toolbarSlot } = useOutletContext<MatrixStudioContext>();
-  const framesHistory = useHistory<number[][]>([BLANK_FRAME()]);
+  const framesHistory = useHistory<EditorFrame[]>([blankFrame(WIDTH, HEIGHT)]);
   const frames = framesHistory.present;
   const [activeFrameIndex, setActiveFrame] = useState(0);
   const activeFrame = Math.min(activeFrameIndex, frames.length - 1);
@@ -96,9 +124,26 @@ export default function EditorTab(): ReactElement {
   const [marqueeText, setMarqueeText] = useState("");
   const [marqueeSpeed, setMarqueeSpeed] = useState(1);
   const [selectedPatternLabel, setSelectedPatternLabel] = useState("Pattern...");
+  const [now, setNow] = useState(new Date());
+  const [batteryPercent, setBatteryPercent] = useState<number | null>(null);
+  const [cpuPercent, setCpuPercent] = useState<number | null>(null);
+  const [ecAvailable, setEcAvailable] = useState(false);
   const intervalRef = useRef<number | null>(null);
   const brightnessTimeoutRef = useRef<number | null>(null);
   const loaded = useRef(false);
+  const hasWidgetFrame = frames.some((f) => f.kind === "widget");
+  const liveData: WidgetLiveData = { now, batteryPercent, cpuPercent };
+  // Play's interval reads this instead of the `liveData` object above, so
+  // a widget frame's per-second data refresh doesn't need to tear down
+  // and rebuild the interval every tick the way including `liveData` in
+  // its effect dependencies would — that churn is worth avoiding for the
+  // same reason addFrame/deleteFrame/handleFrameDrop above now stop Play
+  // before restructuring `frames`: tearing an interval down while a
+  // previous tick's serial write is still in flight risks two writers on
+  // the same unpooled COM port at once (see `port_for_panel`'s doc
+  // comment), which already froze this app once.
+  const liveDataRef = useRef(liveData);
+  liveDataRef.current = liveData;
   // Replays whatever was last actually pushed to the device (a custom
   // frame upload or a built-in pattern selection) — see the RESUME_EVENT
   // effect below. The LED Matrix module is a separate USB device with no
@@ -140,18 +185,48 @@ export default function EditorTab(): ReactElement {
 
   useEffect(() => {
     loadSettings().then((settings) => {
-      const saved = settings[SETTINGS_KEY] as number[][] | undefined;
+      const saved = settings[SETTINGS_KEY] as unknown[] | undefined;
       if (saved && saved.length > 0) {
-        framesHistory.reset(saved);
+        framesHistory.reset(saved.map(normalizeFrame));
       }
       loaded.current = true;
     });
+    invoke<string>("check_ec_status")
+      .then((s) => setEcAvailable(s === "Available"))
+      .catch((err) => {
+        console.error("check_ec_status failed, treating EC as unavailable:", err);
+        setEcAvailable(false);
+      });
   }, []);
 
   useEffect(() => {
     if (!loaded.current) return;
     patchSettings({ [SETTINGS_KEY]: frames }).catch((err) => console.error("Failed to save frames:", err));
   }, [frames]);
+
+  // Ticks the clock and refreshes battery/CPU every HARDWARE_POLL_TICKS-th
+  // tick — only while at least one widget frame actually exists, so a
+  // purely hand-drawn animation never polls EC/sysinfo for data nothing
+  // will use. Mirrors WidgetsTab.tsx's own polling pattern.
+  useEffect(() => {
+    if (!hasWidgetFrame) return;
+    let tickCount = 0;
+    const fetchHardware = (): void => {
+      invoke<BatterySnapshot>("get_battery_snapshot")
+        .then((s) => setBatteryPercent(s.charge_percentage))
+        .catch((err) => console.error("Editor: battery poll failed:", err));
+      invoke<{ cpu_usage_percent: number }>("get_hardware_summary")
+        .then((s) => setCpuPercent(s.cpu_usage_percent))
+        .catch((err) => console.error("Editor: CPU poll failed:", err));
+    };
+    fetchHardware();
+    const interval = window.setInterval(() => {
+      setNow(new Date());
+      tickCount += 1;
+      if (tickCount % HARDWARE_POLL_TICKS === 0) fetchHardware();
+    }, CLOCK_TICK_MS);
+    return () => window.clearInterval(interval);
+  }, [hasWidgetFrame]);
 
   useEffect(() => {
     return () => {
@@ -184,7 +259,8 @@ export default function EditorTab(): ReactElement {
       intervalRef.current = window.setInterval(() => {
         setActiveFrame((prev) => {
           const next = (prev + 1) % frames.length;
-          invoke("update_matrix", { imgData: frames[next], panel }).catch((err) => {
+          const pixels = resolveFramePixels(frames[next], WIDTH, HEIGHT, liveDataRef.current);
+          invoke("update_matrix", { imgData: pixels, panel }).catch((err) => {
             console.error("Playback upload failed:", err);
           });
           return next;
@@ -196,11 +272,24 @@ export default function EditorTab(): ReactElement {
     };
   }, [playing, frames, panel, playbackInterval]);
 
+  const activeFrameData = frames[activeFrame];
+  const isWidgetFrame = activeFrameData.kind === "widget";
+  const activePixels = resolveFramePixels(activeFrameData, WIDTH, HEIGHT, liveData);
+
   const isGestureStartRef = useRef(true);
+  // No-ops on a widget frame rather than painting into it — there's no
+  // pixel buffer to hand-edit there, it's rendered fresh every time (see
+  // this file's module doc comment) — the PixelGrid below is already
+  // non-interactive (`interactive={!isWidgetFrame}`) whenever this would
+  // otherwise fire, so this is a defensive backstop, not the primary
+  // guard.
   const paintActiveFrame = (updater: (prev: number[]) => number[]): void => {
-    const framesUpdater = (prevFrames: number[][]): number[][] => {
+    if (isWidgetFrame) return;
+    const framesUpdater = (prevFrames: EditorFrame[]): EditorFrame[] => {
+      const current = prevFrames[activeFrame];
+      if (current.kind !== "static") return prevFrames;
       const next = [...prevFrames];
-      next[activeFrame] = updater(next[activeFrame]);
+      next[activeFrame] = { kind: "static", pixels: updater(current.pixels) };
       return next;
     };
     if (isGestureStartRef.current) {
@@ -211,7 +300,7 @@ export default function EditorTab(): ReactElement {
     }
   };
 
-  const brush = useBrushPaint(frames[activeFrame], paintActiveFrame, WIDTH, HEIGHT, penSize);
+  const brush = useBrushPaint(activePixels, paintActiveFrame, WIDTH, HEIGHT, penSize);
   const stamp = useStampPlace(paintActiveFrame, WIDTH, HEIGHT, activeStamp);
   const active = toolMode === "stamp" ? stamp : brush;
 
@@ -226,7 +315,7 @@ export default function EditorTab(): ReactElement {
   const setActiveFrameData = (data: number[]): void => {
     framesHistory.commit((prev) => {
       const next = [...prev];
-      next[activeFrame] = data;
+      next[activeFrame] = { kind: "static", pixels: data };
       return next;
     });
   };
@@ -294,7 +383,21 @@ export default function EditorTab(): ReactElement {
     const insertAt = activeFrame + 1;
     framesHistory.commit((prev) => {
       const next = [...prev];
-      next.splice(insertAt, 0, BLANK_FRAME());
+      next.splice(insertAt, 0, blankFrame(WIDTH, HEIGHT));
+      return next;
+    });
+    setActiveFrame(insertAt);
+  };
+
+  // Same insert-after-selected placement and Play-stopping as addFrame
+  // above — a widget frame restructures `frames` exactly the same way a
+  // blank one does.
+  const addWidgetFrame = (widgetType: "clock" | "battery" | "cpu"): void => {
+    setPlaying(false);
+    const insertAt = activeFrame + 1;
+    framesHistory.commit((prev) => {
+      const next = [...prev];
+      next.splice(insertAt, 0, { kind: "widget", widgetType, clockFormat: "24h", clockStyle: "digital" });
       return next;
     });
     setActiveFrame(insertAt);
@@ -339,10 +442,17 @@ export default function EditorTab(): ReactElement {
     });
   };
 
+  // No-ops on a widget frame — "clear" has no meaning for something
+  // that's re-rendered from live data every time, not a pixel buffer you
+  // hand-edit. Only reachable via the Stamp palette's Clear button
+  // anyway, which is itself hidden while a widget frame is active (see
+  // the JSX below), so this is a defensive backstop, same reasoning as
+  // paintActiveFrame's own guard above.
   const clearActiveFrame = (): void => {
+    if (isWidgetFrame) return;
     framesHistory.commit((prev) => {
       const next = [...prev];
-      next[activeFrame] = BLANK_FRAME();
+      next[activeFrame] = blankFrame(WIDTH, HEIGHT);
       return next;
     });
   };
@@ -350,7 +460,7 @@ export default function EditorTab(): ReactElement {
   // Distinct from clearActiveFrame: resets the whole sequence back to a
   // single blank frame, not just the one you're looking at.
   const clearAllFrames = (): void => {
-    framesHistory.commit(() => [BLANK_FRAME()]);
+    framesHistory.commit(() => [blankFrame(WIDTH, HEIGHT)]);
     setActiveFrame(0);
   };
 
@@ -378,7 +488,7 @@ export default function EditorTab(): ReactElement {
   // instead of just doing that itself.
   const uploadCurrentFrame = (): Promise<void> => {
     setPlaying(false);
-    return uploadFrameToDevice(frames[activeFrame]);
+    return uploadFrameToDevice(resolveFramePixels(frames[activeFrame], WIDTH, HEIGHT, liveData));
   };
 
   // Updates the slider instantly on every drag tick, but debounces the
@@ -398,13 +508,15 @@ export default function EditorTab(): ReactElement {
 
   const handleGenerateMarquee = (): void => {
     if (!marqueeText.trim()) return;
+    // generateMarqueeFrames only ever produces plain hand-drawn-style
+    // pixel frames — wrap each as a static EditorFrame.
     const generated = generateMarqueeFrames(marqueeText, { panelWidth: WIDTH, panelHeight: HEIGHT, stepRows: marqueeSpeed });
-    framesHistory.commit(() => generated);
+    framesHistory.commit(() => generated.map((pixels): EditorFrame => ({ kind: "static", pixels })));
     setActiveFrame(0);
     setPlaying(generated.length > 1);
   };
 
-  const handleScheduleFire = (data: number[][]): void => {
+  const handleScheduleFire = (data: EditorFrame[]): void => {
     framesHistory.commit(() => data);
     setActiveFrame(0);
     setPlaying(data.length > 1);
@@ -462,15 +574,15 @@ export default function EditorTab(): ReactElement {
                 framesHistory.commit(() => data);
                 setActiveFrame(0);
               }}
-              previewPixels={(data) => data[0] ?? BLANK_FRAME()}
+              previewPixels={(data) => resolveFramePixels(data[0] ?? blankFrame(WIDTH, HEIGHT), WIDTH, HEIGHT, liveData)}
               previewWidth={WIDTH}
               previewHeight={HEIGHT}
             />
-            <Schedule<number[][]>
+            <Schedule<EditorFrame[]>
               settingsKey={SCHEDULE_KEY}
               arrangementsKey={SAVED_ARRANGEMENTS_KEY}
               onFire={handleScheduleFire}
-              previewPixels={(data) => data[0] ?? BLANK_FRAME()}
+              previewPixels={(data) => resolveFramePixels(data[0] ?? blankFrame(WIDTH, HEIGHT), WIDTH, HEIGHT, liveData)}
               previewWidth={WIDTH}
               previewHeight={HEIGHT}
             />
@@ -480,13 +592,22 @@ export default function EditorTab(): ReactElement {
 
       <div className="flex-1 flex gap-4 min-h-0">
         <Card className="w-96 shrink-0 overflow-auto p-6 min-h-0 flex items-start justify-center">
-          <div className="bg-black/80 backdrop-blur rounded-xl border border-gray-800 p-6 shadow-2xl w-fit">
+          <div className="bg-black/80 backdrop-blur rounded-xl border border-gray-800 p-6 shadow-2xl w-fit relative">
+            {isWidgetFrame && (
+              <div className="absolute top-2 left-2 right-2 z-10 flex items-center gap-1.5 px-2 py-1 bg-black/70 backdrop-blur rounded text-xs text-primary font-medium">
+                {activeFrameData.kind === "widget" && activeFrameData.widgetType === "clock" && <Clock size={12} />}
+                {activeFrameData.kind === "widget" && activeFrameData.widgetType === "battery" && <BatteryMedium size={12} />}
+                {activeFrameData.kind === "widget" && activeFrameData.widgetType === "cpu" && <Cpu size={12} />}
+                Live widget frame — not editable
+              </div>
+            )}
             <PixelGrid
               width={WIDTH}
               height={HEIGHT}
-              pixels={frames[activeFrame]}
+              pixels={activePixels}
               cellSize={16}
               gap={4}
+              interactive={!isWidgetFrame}
               onPixelDown={active.onPixelDown}
               onPixelEnter={active.onPixelEnter}
               ghostIndices={toolMode === "stamp" ? stamp.ghostIndices : undefined}
@@ -576,6 +697,22 @@ export default function EditorTab(): ReactElement {
             >
               <Plus size={16} /> Add Frame
             </button>
+            <div className="flex gap-1" title="Insert a live widget frame after the selected one — it re-renders from current system data every time it's shown, instead of a fixed picture">
+              {WIDGET_FRAME_BUTTONS.map(({ type, label, icon: Icon }) => {
+                const disabled = type === "battery" && !ecAvailable;
+                return (
+                  <button
+                    key={type}
+                    onClick={() => addWidgetFrame(type)}
+                    disabled={disabled}
+                    title={disabled ? "Needs the Framework EC driver — unavailable on this machine (see System Health)" : label}
+                    className="p-2 rounded-lg bg-black/20 border border-white/10 text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <Icon size={16} />
+                  </button>
+                );
+              })}
+            </div>
             <button
               onClick={clearAllFrames}
               title="Clear all frames — resets to a single blank frame"
@@ -634,7 +771,21 @@ export default function EditorTab(): ReactElement {
                 activeFrame === i ? "border-primary bg-primary/10" : "border-white/10 bg-black/20 hover:border-white/30"
               } ${dragOverIndex === i ? "ring-2 ring-primary" : ""}`}
             >
-              <PixelGrid width={WIDTH} height={HEIGHT} pixels={frame} cellSize={1} gap={0.5} interactive={false} />
+              <PixelGrid
+                width={WIDTH}
+                height={HEIGHT}
+                pixels={resolveFramePixels(frame, WIDTH, HEIGHT, liveData)}
+                cellSize={1}
+                gap={0.5}
+                interactive={false}
+              />
+              {frame.kind === "widget" && (
+                <div className="absolute top-0.5 left-0.5 bg-black/70 rounded-sm p-0.5 text-primary">
+                  {frame.widgetType === "clock" && <Clock size={8} />}
+                  {frame.widgetType === "battery" && <BatteryMedium size={8} />}
+                  {frame.widgetType === "cpu" && <Cpu size={8} />}
+                </div>
+              )}
               {frames.length > 1 && (
                 <button
                   onClick={(e) => {

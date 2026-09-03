@@ -22,6 +22,7 @@ import { useBrushPaint } from "../../lib/pixelBrush";
 import { useStampPlace, type StampGlyph } from "../../lib/stampPlace";
 import { generateMarqueeFrames } from "../../lib/marqueeAnimator";
 import { loadSettings, patchSettings } from "../../lib/settings";
+import { normalizeFrame, resolveFramePixels } from "../../lib/matrixFrames";
 import type { MatrixStudioContext } from "./MatrixStudio";
 
 const WIDTH = 9;
@@ -104,11 +105,23 @@ export default function AnimatorTab(): ReactElement {
 
   useEffect(() => {
     loadSettings().then((settings) => {
-      const saved = settings[SETTINGS_KEY] as number[][] | undefined;
+      const saved = settings[SETTINGS_KEY] as unknown[] | undefined;
       if (saved && saved.length > 0) {
+        // This tab only ever works with plain pixel arrays — it doesn't
+        // have EditorTab.tsx's live "widget frame" feature (Clock/
+        // Battery/CPU Load), being the hidden, non-primary route (see
+        // EditorTab.tsx's module doc comment). A widget frame saved from
+        // EditorTab resolves here to a one-time static snapshot rather
+        // than live-updating, so loading it can't crash; saving again
+        // from this tab then "downgrades" it to that fixed snapshot
+        // going forward — an accepted trade-off for a route that isn't
+        // meant to be actively used.
+        const staticFrames = saved.map((raw) =>
+          resolveFramePixels(normalizeFrame(raw), WIDTH, HEIGHT, { now: new Date(), batteryPercent: null, cpuPercent: null })
+        );
         // reset, not commit: hydrating from disk on mount shouldn't
         // create a spurious first undo step back to a blank frame.
-        framesHistory.reset(saved);
+        framesHistory.reset(staticFrames);
       }
       loaded.current = true;
     });
