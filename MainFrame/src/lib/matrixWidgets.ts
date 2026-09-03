@@ -211,7 +211,20 @@ export function renderBarWidget(width: number, height: number, percent: number, 
   return buffer;
 }
 
-/** Renders one widget instance into its allocated `width x height` slice. */
+/**
+ * Renders one widget instance into its allocated `width x height` slice.
+ * Falls back to a blank buffer (logged, not thrown) for a `widget.type`
+ * this switch doesn't recognize, rather than returning `undefined` —
+ * TypeScript's exhaustiveness checking only guarantees every *known*
+ * `WidgetType` is handled, not that a value reaching this function at
+ * runtime actually is one. That gap was a real bug, not a hypothetical
+ * one: a stale pre-widget-frame saved arrangement fed this a plain
+ * pixel array with no `type` field at all, this returned `undefined`,
+ * and PixelGrid crashed calling `.map()` on it — see EditorTab.tsx's
+ * `handleScheduleFire` doc comment for the fix at the actual source,
+ * this is the belt-and-suspenders backstop for whatever the next
+ * unanticipated path turns out to be.
+ */
 export function renderWidgetSlice(widget: WidgetInstance, width: number, height: number, data: WidgetLiveData): number[] {
   switch (widget.type) {
     case "clock":
@@ -222,6 +235,9 @@ export function renderWidgetSlice(widget: WidgetInstance, width: number, height:
       return renderBarWidget(width, height, data.cpuPercent ?? 0, "hatched");
     case "eq":
       // No live audio backend — see this module's doc comment.
+      return new Array(width * height).fill(0);
+    default:
+      console.error("renderWidgetSlice: unrecognized widget type, rendering blank instead of crashing:", widget);
       return new Array(width * height).fill(0);
   }
 }

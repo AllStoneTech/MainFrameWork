@@ -31,6 +31,7 @@ mod matrix_control;
 mod keyboard_mapper;
 mod ec_check;
 mod ec_control;
+mod error_log;
 mod persistence;
 mod installer;
 mod power_watch;
@@ -107,6 +108,7 @@ pub fn run() {
             ec_control::set_fan_auto,
             persistence::save_settings,
             persistence::load_settings,
+            error_log::log_frontend_error,
             tray::set_tray_visible,
             installer::install_driver
         ])

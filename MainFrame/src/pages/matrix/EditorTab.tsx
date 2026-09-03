@@ -58,7 +58,7 @@ import { ToolModeToggle, type ToolMode } from "../../components/ui/ToolModeToggl
 import { useHistory, useUndoRedoShortcuts } from "../../lib/history";
 import { applyBuiltinPattern, BUILTIN_PATTERNS, previewBuiltinPattern } from "../../lib/matrixPatterns";
 import { blankFrame, normalizeFrame, resolveFramePixels, type EditorFrame } from "../../lib/matrixFrames";
-import type { WidgetLiveData } from "../../lib/matrixWidgets";
+import type { WidgetLiveData, ClockFormat, ClockStyle } from "../../lib/matrixWidgets";
 import { useBrushPaint } from "../../lib/pixelBrush";
 import { useStampPlace, type StampGlyph } from "../../lib/stampPlace";
 import { generateMarqueeFrames } from "../../lib/marqueeAnimator";
@@ -403,6 +403,19 @@ export default function EditorTab(): ReactElement {
     setActiveFrame(insertAt);
   };
 
+  // Adjusts the active frame's Clock face (24h/12h, digital/analog) —
+  // only meaningful when it's a clock-type widget frame, mirroring
+  // WidgetsTab.tsx's own per-widget Format/Style panel.
+  const updateActiveClockConfig = (patch: Partial<{ clockFormat: ClockFormat; clockStyle: ClockStyle }>): void => {
+    framesHistory.commit((prev) => {
+      const current = prev[activeFrame];
+      if (current.kind !== "widget" || current.widgetType !== "clock") return prev;
+      const next = [...prev];
+      next[activeFrame] = { ...current, ...patch };
+      return next;
+    });
+  };
+
   const deleteFrame = (index: number): void => {
     if (frames.length === 1) return;
     setPlaying(false);
@@ -516,8 +529,19 @@ export default function EditorTab(): ReactElement {
     setPlaying(generated.length > 1);
   };
 
+  // data may still be in the pre-widget-frame plain-array shape — any
+  // arrangement/schedule entry saved before that feature existed (this
+  // app shipped for a while without it) was stored that way, and
+  // SavedArrangements/Schedule are generic components that just persist
+  // whatever they're handed, with no idea a "frame" needs a `kind` field
+  // now. normalizeFrame upgrades it transparently either way. Missing
+  // this was a real bug, not a hypothetical one: a "fire on startup"
+  // schedule entry saved before today replaced `frames` with unnormalized
+  // data on every launch, and the very next render crashed trying to
+  // resolve an undefined `.kind` — exactly the "entire window goes gray"
+  // reports from testing this feature, not a hardware/serial-port race.
   const handleScheduleFire = (data: EditorFrame[]): void => {
-    framesHistory.commit(() => data);
+    framesHistory.commit(() => data.map(normalizeFrame));
     setActiveFrame(0);
     setPlaying(data.length > 1);
   };
@@ -571,10 +595,10 @@ export default function EditorTab(): ReactElement {
               settingsKey={SAVED_ARRANGEMENTS_KEY}
               currentData={frames}
               onLoad={(data) => {
-                framesHistory.commit(() => data);
+                framesHistory.commit(() => data.map(normalizeFrame));
                 setActiveFrame(0);
               }}
-              previewPixels={(data) => resolveFramePixels(data[0] ?? blankFrame(WIDTH, HEIGHT), WIDTH, HEIGHT, liveData)}
+              previewPixels={(data) => resolveFramePixels(normalizeFrame(data[0] ?? blankFrame(WIDTH, HEIGHT)), WIDTH, HEIGHT, liveData)}
               previewWidth={WIDTH}
               previewHeight={HEIGHT}
             />
@@ -582,7 +606,7 @@ export default function EditorTab(): ReactElement {
               settingsKey={SCHEDULE_KEY}
               arrangementsKey={SAVED_ARRANGEMENTS_KEY}
               onFire={handleScheduleFire}
-              previewPixels={(data) => resolveFramePixels(data[0] ?? blankFrame(WIDTH, HEIGHT), WIDTH, HEIGHT, liveData)}
+              previewPixels={(data) => resolveFramePixels(normalizeFrame(data[0] ?? blankFrame(WIDTH, HEIGHT)), WIDTH, HEIGHT, liveData)}
               previewWidth={WIDTH}
               previewHeight={HEIGHT}
             />
@@ -591,7 +615,7 @@ export default function EditorTab(): ReactElement {
         )}
 
       <div className="flex-1 flex gap-4 min-h-0">
-        <Card className="w-96 shrink-0 overflow-auto p-6 min-h-0 flex items-start justify-center">
+        <Card className="w-96 shrink-0 overflow-auto p-6 min-h-0 flex flex-col items-center justify-center">
           <div className="bg-black/80 backdrop-blur rounded-xl border border-gray-800 p-6 shadow-2xl w-fit relative">
             {isWidgetFrame && (
               <div className="absolute top-2 left-2 right-2 z-10 flex items-center gap-1.5 px-2 py-1 bg-black/70 backdrop-blur rounded text-xs text-primary font-medium">
@@ -613,6 +637,42 @@ export default function EditorTab(): ReactElement {
               ghostIndices={toolMode === "stamp" ? stamp.ghostIndices : undefined}
             />
           </div>
+          {activeFrameData.kind === "widget" && activeFrameData.widgetType === "clock" && (
+            <div className="w-full mt-4 p-3 bg-black/20 border border-white/10 rounded-lg flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-400 w-16">Format</span>
+                {(["24h", "12h"] as const).map((format) => (
+                  <button
+                    key={format}
+                    onClick={() => updateActiveClockConfig({ clockFormat: format })}
+                    className={`px-2 py-1 rounded text-xs font-medium border transition-colors ${
+                      (activeFrameData.clockFormat ?? "24h") === format
+                        ? "bg-primary/10 border-primary/40 text-primary"
+                        : "bg-black/20 border-white/10 text-gray-400 hover:text-white"
+                    }`}
+                  >
+                    {format}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-400 w-16">Style</span>
+                {(["digital", "analog"] as const).map((style) => (
+                  <button
+                    key={style}
+                    onClick={() => updateActiveClockConfig({ clockStyle: style })}
+                    className={`px-2 py-1 rounded text-xs font-medium border capitalize transition-colors ${
+                      (activeFrameData.clockStyle ?? "digital") === style
+                        ? "bg-primary/10 border-primary/40 text-primary"
+                        : "bg-black/20 border-white/10 text-gray-400 hover:text-white"
+                    }`}
+                  >
+                    {style}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </Card>
         {/* Marquee generator first, Stamp palette below it when active —
             same column width throughout regardless of which is showing. */}
@@ -697,7 +757,10 @@ export default function EditorTab(): ReactElement {
             >
               <Plus size={16} /> Add Frame
             </button>
-            <div className="flex gap-1" title="Insert a live widget frame after the selected one — it re-renders from current system data every time it's shown, instead of a fixed picture">
+            <div
+              className="flex gap-1 p-1 border border-white/10 rounded-lg"
+              title="Insert a live widget frame after the selected one — it re-renders from current system data every time it's shown, instead of a fixed picture"
+            >
               {WIDGET_FRAME_BUTTONS.map(({ type, label, icon: Icon }) => {
                 const disabled = type === "battery" && !ecAvailable;
                 return (
