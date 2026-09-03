@@ -65,6 +65,7 @@ pub fn run() {
         .manage(keyboard_mapper::KeyboardHidState::default())
         .manage(system_info::SystemInfoState::default())
         .manage(device_manager::DeviceScanState::default())
+        .manage(matrix_control::MatrixSerialState::default())
         .setup(|app| {
             tray::setup_tray(app)?;
             power_watch::watch_for_resume(app.handle().clone());

@@ -23,8 +23,34 @@
 //! panel is woken. [`send_visible_command`] handles this by waking the
 //! panel immediately before anything meant to be seen, rather than
 //! leaving "is it asleep?" as a manual troubleshooting step.
+//!
+//! Every command below takes [`MatrixSerialState`] and holds its lock for
+//! the whole port-open-to-close span — see that struct's doc comment for
+//! why: this isn't precautionary, it's a fix for a real hang reproduced
+//! twice on real hardware.
 use serialport::{SerialPort, SerialPortType};
+use std::sync::Mutex;
 use std::time::Duration;
+
+/// Serializes all access to the LED Matrix's serial ports (both panels
+/// share one lock, not one each). [`port_for_panel`] opens a fresh,
+/// uncached connection on every call — with no coordination, two Tauri
+/// commands firing at once (e.g. the Widgets tab's live-render loop
+/// still mid-tick exactly when another tab mounts and queries
+/// brightness) can both try to open the same COM port at the same time.
+/// Confirmed on real hardware that this doesn't fail fast: it hung the
+/// whole app ("Not Responding" / a gray, unresponsive window) rather
+/// than erroring — twice, in two unrelated collision scenarios (Play
+/// racing a frame reorder in the Editor tab; the Widgets tab's render
+/// loop racing the Editor tab mounting right after it). A single global
+/// lock trades a small, harmless cost — Panel 1 and Panel 2 commands
+/// blocking on each other even though they're physically independent
+/// ports — for not having to reason about which command pairs are
+/// actually safe to run concurrently.
+#[derive(Default)]
+pub struct MatrixSerialState {
+    lock: Mutex<()>,
+}
 
 const MAGIC: [u8; 2] = [0x32, 0xAC];
 const BAUD_RATE: u32 = 115200;
@@ -146,11 +172,12 @@ fn pack_pixels(pixels: &[u8]) -> [u8; PACKED_LEN] {
 /// Returns an error string if the buffer length is wrong, no matching
 /// port is found, or the write fails.
 #[tauri::command]
-pub fn update_matrix(img_data: Vec<u8>, panel: String) -> Result<String, String> {
+pub fn update_matrix(state: tauri::State<MatrixSerialState>, img_data: Vec<u8>, panel: String) -> Result<String, String> {
     let expected_len = MATRIX_WIDTH * MATRIX_HEIGHT;
     if img_data.len() != expected_len {
         return Err(format!("Expected {expected_len} pixels, got {}", img_data.len()));
     }
+    let _guard = state.lock.lock().map_err(|e| e.to_string())?;
 
     let mut port = port_for_panel(&panel)?;
     let packed = pack_pixels(&img_data);
@@ -161,7 +188,8 @@ pub fn update_matrix(img_data: Vec<u8>, panel: String) -> Result<String, String>
 
 /// Sets LED brightness (0-255) on one panel.
 #[tauri::command]
-pub fn set_matrix_brightness(panel: String, brightness: u8) -> Result<String, String> {
+pub fn set_matrix_brightness(state: tauri::State<MatrixSerialState>, panel: String, brightness: u8) -> Result<String, String> {
+    let _guard = state.lock.lock().map_err(|e| e.to_string())?;
     let mut port = port_for_panel(&panel)?;
     send_visible_command(port.as_mut(), CMD_BRIGHTNESS, &[brightness])?;
     Ok("Brightness updated".to_string())
@@ -179,7 +207,13 @@ pub fn set_matrix_brightness(panel: String, brightness: u8) -> Result<String, St
 /// (`commands.md`), not a physical module — treat failures here with
 /// more suspicion until it's actually been checked on real hardware.
 #[tauri::command]
-pub fn set_matrix_pattern(panel: String, pattern_id: u8, percentage: Option<u8>) -> Result<String, String> {
+pub fn set_matrix_pattern(
+    state: tauri::State<MatrixSerialState>,
+    panel: String,
+    pattern_id: u8,
+    percentage: Option<u8>,
+) -> Result<String, String> {
+    let _guard = state.lock.lock().map_err(|e| e.to_string())?;
     let mut port = port_for_panel(&panel)?;
     let mut params = vec![pattern_id];
     if pattern_id == 0 {
@@ -199,7 +233,8 @@ pub fn set_matrix_pattern(panel: String, pattern_id: u8, percentage: Option<u8>)
 /// **Not yet confirmed against real hardware** — see
 /// [`set_matrix_pattern`]'s doc comment.
 #[tauri::command]
-pub fn set_matrix_animate(panel: String, animate: bool) -> Result<String, String> {
+pub fn set_matrix_animate(state: tauri::State<MatrixSerialState>, panel: String, animate: bool) -> Result<String, String> {
+    let _guard = state.lock.lock().map_err(|e| e.to_string())?;
     let mut port = port_for_panel(&panel)?;
     send_visible_command(port.as_mut(), CMD_ANIMATE, &[animate as u8])?;
     Ok(if animate { "Animating".to_string() } else { "Animation stopped".to_string() })
@@ -220,11 +255,13 @@ pub fn set_matrix_animate(panel: String, animate: bool) -> Result<String, String
 /// [`set_matrix_pattern`]'s doc comment.
 #[tauri::command]
 pub fn set_matrix_pattern_and_animate(
+    state: tauri::State<MatrixSerialState>,
     panel: String,
     pattern_id: u8,
     percentage: Option<u8>,
     animate: bool,
 ) -> Result<String, String> {
+    let _guard = state.lock.lock().map_err(|e| e.to_string())?;
     let mut port = port_for_panel(&panel)?;
     let mut params = vec![pattern_id];
     if pattern_id == 0 {
@@ -237,7 +274,8 @@ pub fn set_matrix_pattern_and_animate(
 
 /// Puts one panel to sleep or wakes it.
 #[tauri::command]
-pub fn set_matrix_sleep(panel: String, sleep: bool) -> Result<String, String> {
+pub fn set_matrix_sleep(state: tauri::State<MatrixSerialState>, panel: String, sleep: bool) -> Result<String, String> {
+    let _guard = state.lock.lock().map_err(|e| e.to_string())?;
     let mut port = port_for_panel(&panel)?;
     send_command(port.as_mut(), CMD_SLEEP, &[sleep as u8])?;
     Ok(if sleep { "Sleeping".to_string() } else { "Awake".to_string() })
@@ -254,7 +292,8 @@ pub fn set_matrix_sleep(panel: String, sleep: bool) -> Result<String, String> {
 /// directly on `commands.md`'s own worked Python example for this exact
 /// command, which the others don't have.
 #[tauri::command]
-pub fn get_matrix_sleep(panel: String) -> Result<bool, String> {
+pub fn get_matrix_sleep(state: tauri::State<MatrixSerialState>, panel: String) -> Result<bool, String> {
+    let _guard = state.lock.lock().map_err(|e| e.to_string())?;
     let mut port = port_for_panel(&panel)?;
     Ok(send_query(port.as_mut(), CMD_SLEEP)? != 0)
 }
@@ -266,7 +305,8 @@ pub fn get_matrix_sleep(panel: String) -> Result<bool, String> {
 /// **Not yet confirmed against real hardware** — see
 /// [`set_matrix_pattern`]'s doc comment.
 #[tauri::command]
-pub fn get_matrix_brightness(panel: String) -> Result<u8, String> {
+pub fn get_matrix_brightness(state: tauri::State<MatrixSerialState>, panel: String) -> Result<u8, String> {
+    let _guard = state.lock.lock().map_err(|e| e.to_string())?;
     let mut port = port_for_panel(&panel)?;
     send_query(port.as_mut(), CMD_BRIGHTNESS)
 }
